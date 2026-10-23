@@ -216,11 +216,11 @@ export function EventForm({ event }: { event?: EventDetail }) {
             <SectionTitle no="01" title="Thông tin chung" desc="Những gì đội media cần biết." />
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Tên sự kiện *">
-                <input className="input" value={info.name} onChange={(e) => setI('name')(e.target.value)} placeholder="Ngày hội Sáng tạo CSE" />
+                <input className="input" value={info.name} onChange={(e) => setI('name')(e.target.value)} placeholder="Seminar xxx" />
               </Field>
               <Field label="Địa điểm *">
                 <div className="relative">
-                  <input className="input pr-10" value={info.location} onChange={(e) => setI('location')(e.target.value)} placeholder="Hội trường A, Tòa nhà CSE" />
+                  <input className="input pr-10" value={info.location} onChange={(e) => setI('location')(e.target.value)} placeholder="Hội trường x, cs1" />
                   <MapPin className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-primary" />
                 </div>
               </Field>
@@ -242,7 +242,7 @@ export function EventForm({ event }: { event?: EventDetail }) {
             >
               <MemberPicker people={btts} value={memberIds} onChange={setMemberIds} placeholder="Chọn thành viên BTT" />
             </Field>
-            <Field label="Ghi chú chi tiết / Thông tin recap">
+            <Field label="Thông tin chi tiết (Để ghi recap)">
               <textarea
                 className="input min-h-[96px]"
                 value={info.notes}

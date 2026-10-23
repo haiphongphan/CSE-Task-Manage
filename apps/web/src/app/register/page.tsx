@@ -51,14 +51,14 @@ export default function RegisterPage() {
       <form onSubmit={submit} className="flex flex-col gap-6" noValidate>
         <div className="flex flex-col gap-[18px]">
           <Field label="Họ và tên *" error={errors.fullName}>
-            <input className="input" value={form.fullName} onChange={set('fullName')} placeholder="Phan Hải Phong" autoComplete="name" />
+            <input className="input" value={form.fullName} onChange={set('fullName')} autoComplete="name" />
           </Field>
           <Field label="Username *" hint="Dùng username duy nhất cho hồ sơ của bạn." error={errors.username}>
-            <input className="input" value={form.username} onChange={set('username')} placeholder="haiphongphan" autoComplete="username" />
+            <input className="input" value={form.username} onChange={set('username')} autoComplete="username" />
           </Field>
           <Field label="Email *" error={errors.email}>
             <div className="relative">
-              <input className="input pr-10" type="email" value={form.email} onChange={set('email')} placeholder="ten@hcmut.edu.vn" autoComplete="email" />
+              <input className="input pr-10" type="email" value={form.email} onChange={set('email')}  autoComplete="email" />
               <Mail className="absolute right-3 top-1/2 size-[18px] -translate-y-1/2 text-primary" />
             </div>
           </Field>

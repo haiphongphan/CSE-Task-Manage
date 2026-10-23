@@ -55,10 +55,6 @@ export default function LoginPage() {
             Đăng ký
           </Link>
         </p>
-        <Alert>
-          <b>Tài khoản demo</b> (mật khẩu <code>matkhau123</code>): <code>linh.nguyen</code> (Admin) · <code>mai.anh</code> (BCH) ·{' '}
-          <code>minh.tran</code> (BTT)
-        </Alert>
       </form>
     </AuthLayout>
   );
