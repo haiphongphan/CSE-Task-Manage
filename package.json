@@ -1,0 +1,15 @@
+{
+  "name": "cse-task-manage",
+  "private": true,
+  "description": "Quản lý công việc cho từng sự kiện — monorepo: apps/api, apps/web, apps/mobile, db/",
+  "scripts": {
+    "install:all": "npm --prefix apps/api install && npm --prefix apps/web install && npm --prefix apps/mobile install",
+    "db:reset": "cd db && psql -d ${DB_NAME:-cse_task_manage} -v ON_ERROR_STOP=1 -f schema.sql && psql -d ${DB_NAME:-cse_task_manage} -v ON_ERROR_STOP=1 -f seed.sql",
+    "db:seed": "cd db && psql -d ${DB_NAME:-cse_task_manage} -v ON_ERROR_STOP=1 -f seed.sql",
+    "dev:api": "npm --prefix apps/api run dev",
+    "dev:web": "npm --prefix apps/web run dev",
+    "dev:mobile": "npm --prefix apps/mobile run start",
+    "smoke": "npm --prefix apps/api run smoke",
+    "typecheck": "npm --prefix apps/api run typecheck && npm --prefix apps/web run typecheck && npm --prefix apps/mobile run typecheck"
+  }
+}

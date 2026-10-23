@@ -1,0 +1,46 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/*
+ * Bảng màu lấy từ Figma "Task Manage".
+ * Khai báo trong @theme => Tailwind tự sinh class: bg-navy, text-primary, border-line...
+ */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+
+  --color-navy: #03045e;        /* chữ tiêu đề, thanh điều hướng */
+  --color-primary: #0077b6;     /* nút chính, link */
+  --color-primary-dark: #00629a;
+  --color-sky: #00b4d8;         /* thanh tiến độ */
+  --color-ice: #caf0f8;         /* nền trang, nền ô nhập */
+  --color-line: #90e0ef;        /* viền */
+  --color-muted: #53677e;       /* chữ phụ */
+  --color-divider: #d7eaf0;     /* đường kẻ */
+  --color-soft: #f0fafd;        /* nền ô thông tin */
+  --color-danger: #c0392b;
+}
+
+html,
+body {
+  background: var(--color-ice);
+  color: var(--color-navy);
+}
+
+/* Một vài class dùng lại nhiều lần */
+@layer components {
+  .card {
+    @apply rounded-xl border border-line bg-white;
+  }
+  .input {
+    @apply min-h-[46px] w-full rounded-lg border border-line bg-ice px-3 py-2.5 text-[13px] text-navy outline-none transition placeholder:text-muted/70 focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60;
+  }
+  .label {
+    @apply text-xs text-navy;
+  }
+  .hint {
+    @apply text-[11px] text-muted;
+  }
+  .eyebrow {
+    @apply text-[11px] uppercase tracking-wide text-primary;
+  }
+}

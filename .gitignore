@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.local
+dist/
+.next/
+.expo/
+*.log
+.DS_Store
+
+# thư mục tạm dùng để đồng bộ file
+.sync/

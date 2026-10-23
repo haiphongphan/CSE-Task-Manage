@@ -1,0 +1,209 @@
+// =====================================================================
+// Prisma schema — ĐƯỢC SINH TỪ DB bằng `npx prisma db pull`
+// ---------------------------------------------------------------------
+// Nguồn sự thật là db/schema.sql. Quy trình khi đổi DB:
+//   1. Sửa db/schema.sql  ->  psql -f schema.sql (+ seed.sql)
+//   2. npx prisma db pull   (cập nhật file này)
+//   3. npx prisma generate  (sinh lại Prisma Client có kiểu TypeScript)
+// Tên model/field đã được đổi sang PascalCase/camelCase bằng @map/@@map;
+// `db pull` giữ nguyên các đổi tên này ở lần chạy sau.
+// =====================================================================
+
+// Prisma 7: client được sinh ra thành code TypeScript trong src/generated/prisma
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
+}
+
+// URL kết nối nằm trong prisma.config.ts (đọc DATABASE_URL từ .env)
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                 Int       @id @default(autoincrement())
+  fullName           String    @map("full_name") @db.VarChar(100)
+  username           String    @unique @db.VarChar(50)
+  email              String    @unique @db.VarChar(255)
+  passwordHash       String    @map("password_hash")
+  role               UserRole
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  activityLogs           ActivityLog[]
+  eventMemberships       EventMember[]
+  createdEvents          Event[]
+  receivedNotifications  Notification[] @relation("NotificationRecipient")
+  sentNotifications      Notification[] @relation("NotificationSender")
+  pushTokens             PushToken[]
+  assignedTasks          Task[]
+
+  @@map("users")
+}
+
+model Event {
+  id                   Int         @id @default(autoincrement())
+  name                 String      @db.VarChar(150)
+  location             String      @db.VarChar(150)
+  startsAt             DateTime    @map("starts_at") @db.Timestamptz(6)
+  endsAt               DateTime    @map("ends_at") @db.Timestamptz(6)
+  notes                String?
+  onlineContent        String?     @map("online_content")
+  offlineContent       String?     @map("offline_content")
+  photographerNeeded   Boolean     @default(true) @map("photographer_needed")
+  photographerQuantity Int         @default(1) @map("photographer_quantity") @db.SmallInt
+  status               EventStatus @default(DRAFT)
+  createdById          Int         @map("created_by")
+  publishedAt          DateTime?   @map("published_at") @db.Timestamptz(6)
+  createdAt            DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime    @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  activityLogs  ActivityLog[]
+  members       EventMember[]
+  createdBy     User           @relation(fields: [createdById], references: [id], onUpdate: NoAction)
+  notifications Notification[]
+  tasks         Task[]
+
+  @@index([createdById], map: "idx_events_created_by")
+  @@index([startsAt], map: "idx_events_starts_at")
+  @@map("events")
+}
+
+model EventMember {
+  eventId Int      @map("event_id")
+  userId  Int      @map("user_id")
+  addedAt DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
+  event   Event    @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([eventId, userId])
+  @@index([userId], map: "idx_event_members_user")
+  @@map("event_members")
+}
+
+model Task {
+  id          Int        @id @default(autoincrement())
+  code        String     @unique @default(dbgenerated("('TSK-'::text || lpad((nextval('task_code_seq'::regclass))::text, 3, '0'::text))")) @db.VarChar(20)
+  eventId     Int        @map("event_id")
+  type        TaskType
+  title       String     @db.VarChar(150)
+  dimensions  String?    @db.VarChar(100)
+  deadline    DateTime   @db.Timestamptz(6)
+  assigneeId  Int?       @map("assignee_id")
+  status      TaskStatus @default(TODO)
+  progress    Int        @default(0) @db.SmallInt
+  notes       String?
+  completedAt DateTime?  @map("completed_at") @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime   @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  notifications Notification[]
+  assignee      User?          @relation(fields: [assigneeId], references: [id], onUpdate: NoAction)
+  event         Event          @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([assigneeId], map: "idx_tasks_assignee")
+  @@index([eventId], map: "idx_tasks_event")
+  @@map("tasks")
+}
+
+model PushToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  token     String   @unique @db.VarChar(255)
+  platform  String   @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([userId], map: "idx_push_tokens_user")
+  @@map("push_tokens")
+}
+
+model Notification {
+  id           Int              @id @default(autoincrement())
+  recipientId  Int              @map("recipient_id")
+  eventId      Int?             @map("event_id")
+  taskId       Int?             @map("task_id")
+  type         NotificationType
+  title        String           @db.VarChar(200)
+  body         String
+  sentById     Int?             @map("sent_by")
+  reminderDate DateTime?        @map("reminder_date") @db.Date
+  pushSentAt   DateTime?        @map("push_sent_at") @db.Timestamptz(6)
+  readAt       DateTime?        @map("read_at") @db.Timestamptz(6)
+  dismissedAt  DateTime?        @map("dismissed_at") @db.Timestamptz(6)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  event     Event? @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  recipient User   @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sentBy    User?  @relation("NotificationSender", fields: [sentById], references: [id], onUpdate: NoAction)
+  task      Task?  @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([recipientId, createdAt(sort: Desc)], map: "idx_notifications_recipient")
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id        Int      @id @default(autoincrement())
+  eventId   Int      @map("event_id")
+  actorId   Int?     @map("actor_id")
+  message   String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  actor     User?    @relation(fields: [actorId], references: [id], onUpdate: NoAction)
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([eventId, createdAt(sort: Desc)], map: "idx_activity_event")
+  @@map("activity_logs")
+}
+
+enum UserRole {
+  ADMIN
+  BCH
+  BTT
+
+  @@map("user_role")
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  COMPLETED
+
+  @@map("event_status")
+}
+
+enum TaskType {
+  BANNER
+  BACKDROP
+  BANDROLL
+  STANDEE
+  INVITATION_LETTER
+  OTHER
+  PHOTOGRAPHER
+  RECAP
+
+  @@map("task_type")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  COMPLETED
+
+  @@map("task_status")
+}
+
+enum NotificationType {
+  MANUAL_REMIND
+  PHOTO_REMINDER
+  RECAP_REMINDER
+  DEADLINE_ALERT
+  EVENT_ASSIGNED
+  TASK_UPDATED
+
+  @@map("notification_type")
+}
