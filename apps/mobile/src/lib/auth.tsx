@@ -4,8 +4,10 @@ import { AppState, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { api, tokenStore } from './api';
+import { clearApiCache } from './useApi';
 import { pollAndNotify, setupNotifications, unregisterPush, type PushMode } from './notifications';
 import type { Role, User } from './types';
+import { openTab } from './workspace';
 
 interface AuthState {
   user: User | null;
@@ -20,8 +22,9 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
-export const homeOf = (role: Role) =>
-  role === 'ADMIN' ? '/admin/accounts' : role === 'BCH' ? '/bch/events' : '/btt/events';
+/** Mọi vai trò đều vào màn /home; tab mở sẵn tuỳ vai trò (xem lib/workspace.ts) */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const homeOf = (_role: Role) => '/home';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -77,8 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const sub =
       Platform.OS !== 'web'
         ? Notifications.addNotificationResponseReceivedListener((resp) => {
-            const eventId = resp.notification.request.content.data?.eventId;
-            if (eventId) router.push(`/events/${eventId}`);
+            const data = resp.notification.request.content.data ?? {};
+            // Bản tin 09:00 -> mở tab Nhắc nhở thông minh; thông báo khác -> mở sự kiện
+            if (data.screen === 'reminders' || data.type === 'DAILY_DIGEST') openTab('btt/reminders');
+            else if (data.eventId) router.push(`/events/${data.eventId}`);
           })
         : null;
 
@@ -106,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     await unregisterPush();
     await tokenStore.clear();
+    clearApiCache();
     lastId.current = 0;
     setUser(null);
     router.replace('/login');

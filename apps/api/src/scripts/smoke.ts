@@ -80,10 +80,10 @@ async function main() {
   const payload = {
     name: 'Sự kiện kiểm thử', location: 'Phòng test', startsAt: start, endsAt: end,
     notes: 'Ghi chú', onlineContent: 'Online', offlineContent: 'Offline',
-    photographerNeeded: true, photographerQuantity: 2, photographerAssigneeId: minh.id,
+    photographerNeeded: true, photographerQuantity: 2,
     memberIds: [minh.id, bttIds.find((id) => id !== minh.id)],
     deliverables: [
-      { type: 'BANNER', dimensions: '1920 × 1080 px', deadline: new Date(Date.now() + 5 * day), assigneeId: minh.id },
+      { type: 'BANNER', dimensions: '1920 × 1080 px', deadline: new Date(Date.now() + 1 * day) },
       { type: 'STANDEE', dimensions: '80 × 180 cm', deadline: new Date(Date.now() + 6 * day) },
     ],
     publish: true,
@@ -121,7 +121,7 @@ async function main() {
   r = await call('PUT', `/events/${ev.id}`, bch, {
     ...payload,
     name: 'Sự kiện kiểm thử (đã sửa)',
-    deliverables: [{ id: banner.id, type: 'BANNER', dimensions: '1200 × 628 px', deadline: banner.deadline, assigneeId: minh.id }],
+    deliverables: [{ id: banner.id, type: 'BANNER', dimensions: '1200 × 628 px', deadline: banner.deadline }],
   });
   check('BCH sửa sự kiện chưa diễn ra', r.status === 200 && r.json.event.tasks.length === 3, r.json);
   r = await call('POST', `/tasks/${recap.id}/remind`, bch, {});
@@ -134,12 +134,32 @@ async function main() {
   check('Admin lọc task quá hạn', r.status === 200 && r.json.items.every((t: any) => t.isOverdue), r.json);
   r = await call('PATCH', `/tasks/${recap.id}`, admin, { progress: 50, status: 'IN_PROGRESS', notes: 'Admin sửa' });
   check('Admin sửa task', r.status === 200 && r.json.task.progress === 50, r.json);
-  r = await call('POST', '/admin/run-reminders', admin);
-  check('Admin chạy job nhắc nhở', r.status === 200, r.json);
-  r = await call('POST', '/admin/run-reminders', admin);
-  check('Chạy lại job không tạo trùng', r.status === 200 && r.json.photo + r.json.recap + r.json.deadline === 0, r.json);
+  r = await call('POST', '/admin/run-digest', admin);
+  check('Admin gửi bản tin hằng ngày', r.status === 200 && r.json.recipients >= 1, r.json);
+  r = await call('POST', '/admin/run-digest', admin);
+  check('Gửi lại trong ngày không tạo trùng', r.status === 200 && r.json.sent === 0, r.json);
+  r = await call('GET', '/notifications', btt);
+  const digests = r.json.items.filter((n: any) => n.type === 'DAILY_DIGEST');
+  check('BTT nhận đúng 1 bản tin gộp hôm nay', digests.length === 1 && /việc cần làm/.test(digests[0].title), digests);
+  r = await call('POST', '/cron/daily-digest');
+  check('Cron endpoint chặn khi thiếu CRON_SECRET', r.status === 403, r.json);
+  if (process.env.CRON_SECRET) {
+    const res = await fetch(API + '/cron/daily-digest', { method: 'POST', headers: { 'x-cron-secret': process.env.CRON_SECRET } });
+    check('Cron endpoint chạy với CRON_SECRET đúng', res.status === 200);
+  }
   const exp = await fetch(`${API}/tasks/export.csv`, { headers: { Authorization: `Bearer ${admin}` } });
   check('Export CSV', exp.status === 200 && (await exp.text()).includes('Mã'));
+
+  // --- Web Push (iPhone / trình duyệt) ---
+  r = await call('GET', '/push/web/public-key', btt);
+  check('Lấy khoá VAPID công khai', r.status === 200 && 'enabled' in r.json, r.json);
+  const fakeSub = { endpoint: `https://push.example.invalid/${suffix}`, keys: { p256dh: 'B'.repeat(87), auth: 'A'.repeat(22) } };
+  r = await call('POST', '/push/web/subscriptions', btt, { endpoint: 'khong-phai-url', keys: fakeSub.keys });
+  check('Đăng ký Web Push sai định dạng bị từ chối', r.status === 400, r.json);
+  r = await call('POST', '/push/web/subscriptions', btt, fakeSub);
+  check('Lưu đăng ký Web Push', r.status === 204, r.json);
+  r = await call('DELETE', '/push/web/subscriptions', btt, { endpoint: fakeSub.endpoint });
+  check('Gỡ đăng ký Web Push', r.status === 204, r.json);
 
   // --- Dọn dẹp ---
   r = await call('DELETE', `/events/${ev.id}`, admin);

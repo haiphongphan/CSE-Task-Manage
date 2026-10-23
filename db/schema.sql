@@ -20,6 +20,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- ---------- Dọn dẹp (thứ tự ngược với phụ thuộc) ----------
 DROP TABLE IF EXISTS activity_logs   CASCADE;
 DROP TABLE IF EXISTS notifications   CASCADE;
+DROP TABLE IF EXISTS web_push_subscriptions CASCADE;
 DROP TABLE IF EXISTS push_tokens     CASCADE;
 DROP TABLE IF EXISTS tasks           CASCADE;
 DROP TABLE IF EXISTS event_members   CASCADE;
@@ -46,12 +47,10 @@ CREATE TYPE task_type AS ENUM (
 CREATE TYPE task_status AS ENUM ('TODO', 'IN_PROGRESS', 'IN_REVIEW', 'COMPLETED');
 
 CREATE TYPE notification_type AS ENUM (
+  'DAILY_DIGEST',    -- tự động 09:00 mỗi ngày: gộp mọi task còn mở (push + email)
   'MANUAL_REMIND',   -- BCH bấm "Nhắc" một task
-  'PHOTO_REMINDER',  -- tự động, hằng ngày từ 3 ngày trước sự kiện
-  'RECAP_REMINDER',  -- tự động, hằng ngày sau khi sự kiện kết thúc
-  'DEADLINE_ALERT',  -- tự động, task sắp tới hạn (trong 48h)
   'EVENT_ASSIGNED',  -- BTT được phân công vào sự kiện
-  'TASK_UPDATED'     -- task được chỉnh sửa
+  'TASK_UPDATED'     -- task/sự kiện được chỉnh sửa hoặc hoàn thành
 );
 
 -- ---------- Hàm dùng chung: tự cập nhật cột updated_at ----------
@@ -110,6 +109,8 @@ CREATE TRIGGER trg_events_updated BEFORE UPDATE ON events
 
 -- =====================================================================
 -- event_members: các BTT phụ trách một sự kiện (quan hệ nhiều–nhiều)
+-- Task KHÔNG giao cho từng người: cả nhóm BTT của sự kiện cùng phụ trách
+-- mọi task của sự kiện đó.
 -- =====================================================================
 CREATE TABLE event_members (
   event_id   integer     NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -146,11 +147,11 @@ CREATE TABLE tasks (
   title        varchar(150) NOT NULL,     -- VD "Banner", hoặc loại tự đặt khi type = OTHER
   dimensions   varchar(100),              -- VD "1920 × 1080 px"
   deadline     timestamptz  NOT NULL,
-  assignee_id  integer      REFERENCES users(id) ON DELETE SET NULL,
   status       task_status  NOT NULL DEFAULT 'TODO',
   progress     smallint     NOT NULL DEFAULT 0,
   notes        text,
   completed_at timestamptz,
+  completed_by integer      REFERENCES users(id) ON DELETE SET NULL, -- ai bấm hoàn thành
   created_at   timestamptz  NOT NULL DEFAULT now(),
   updated_at   timestamptz  NOT NULL DEFAULT now(),
   CONSTRAINT tasks_progress_range CHECK (progress BETWEEN 0 AND 100),
@@ -159,7 +160,6 @@ CREATE TABLE tasks (
     CHECK ((status = 'COMPLETED') = (completed_at IS NOT NULL))
 );
 CREATE INDEX idx_tasks_event    ON tasks(event_id);
-CREATE INDEX idx_tasks_assignee ON tasks(assignee_id);
 CREATE INDEX idx_tasks_deadline ON tasks(deadline) WHERE status <> 'COMPLETED';
 CREATE TRIGGER trg_tasks_updated BEFORE UPDATE ON tasks
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -181,6 +181,26 @@ CREATE TRIGGER trg_push_tokens_updated BEFORE UPDATE ON push_tokens
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- =====================================================================
+-- web_push_subscriptions: đăng ký Web Push của trình duyệt / web app đã
+-- "Thêm vào màn hình chính" trên iPhone (iOS 16.4+), Android, máy tính.
+-- Trình duyệt cấp 3 giá trị: endpoint (URL của dịch vụ push: Apple/Google/
+-- Mozilla) + 2 khoá p256dh, auth để mã hoá nội dung gửi tới đúng máy đó.
+-- =====================================================================
+CREATE TABLE web_push_subscriptions (
+  id         integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id    integer     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint   text        NOT NULL UNIQUE,
+  p256dh     text        NOT NULL,
+  auth       text        NOT NULL,
+  user_agent varchar(300),            -- để biết là iPhone hay máy tính (hiển thị/gỡ lỗi)
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_web_push_user ON web_push_subscriptions(user_id);
+CREATE TRIGGER trg_web_push_updated BEFORE UPDATE ON web_push_subscriptions
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- =====================================================================
 -- notifications: hộp thư thông báo trong app (cũng là nhật ký đã gửi push)
 -- =====================================================================
 CREATE TABLE notifications (
@@ -192,16 +212,19 @@ CREATE TABLE notifications (
   title         varchar(200)      NOT NULL,
   body          text              NOT NULL,
   sent_by       integer           REFERENCES users(id) ON DELETE SET NULL, -- NULL = hệ thống tự gửi
-  reminder_date date,             -- ngày (giờ VN) của nhắc nhở tự động, chống gửi trùng
+  reminder_date date,             -- ngày (giờ VN) của bản tin hằng ngày, chống gửi trùng
   push_sent_at  timestamptz,      -- thời điểm đã đẩy sang dịch vụ push (NULL = chưa/không đẩy)
+  email_sent_at timestamptz,      -- thời điểm đã gửi email (NULL = chưa/không gửi)
   read_at       timestamptz,
   dismissed_at  timestamptz,      -- người dùng bấm "Đã hiểu"
   created_at    timestamptz       NOT NULL DEFAULT now()
 );
--- Mỗi task + người nhận + loại nhắc chỉ có 1 thông báo / ngày.
--- (Thông báo thủ công có reminder_date NULL nên không bị ràng buộc này.)
+-- Mỗi người nhận + loại + ngày chỉ có 1 bản tin (VD: 1 DAILY_DIGEST / người / ngày).
+-- NULLS NOT DISTINCT (PostgreSQL 15+): coi task_id NULL như nhau, nếu không
+-- Postgres sẽ coi mọi NULL là khác nhau và chỉ mục mất tác dụng.
+-- Thông báo thủ công có reminder_date NULL nên không bị ràng buộc này.
 CREATE UNIQUE INDEX uq_notifications_daily
-  ON notifications(task_id, recipient_id, type, reminder_date)
+  ON notifications(task_id, recipient_id, type, reminder_date) NULLS NOT DISTINCT
   WHERE reminder_date IS NOT NULL;
 CREATE INDEX idx_notifications_recipient ON notifications(recipient_id, created_at DESC);
 
@@ -216,5 +239,22 @@ CREATE TABLE activity_logs (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_activity_event ON activity_logs(event_id, created_at DESC);
+
+-- =====================================================================
+-- Row Level Security (RLS)
+-- ---------------------------------------------------------------------
+-- Supabase tự mở schema "public" ra REST API công khai (khoá anon).
+-- Bật RLS mà KHÔNG tạo policy nào => khoá anon không đọc/ghi được gì.
+-- API của chúng ta kết nối bằng user sở hữu bảng (postgres) nên không bị ảnh hưởng.
+-- Chạy local cũng an toàn: chủ sở hữu bảng bỏ qua RLS.
+-- =====================================================================
+ALTER TABLE users          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE events         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_members  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tasks          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE push_tokens    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE web_push_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_logs  ENABLE ROW LEVEL SECURITY;
 
 COMMIT;

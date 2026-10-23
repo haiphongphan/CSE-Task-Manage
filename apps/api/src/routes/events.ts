@@ -129,7 +129,6 @@ const deliverableSchema = z
     title: z.string().trim().max(150).optional(),
     dimensions: z.string().trim().max(100).optional().nullable(),
     deadline: z.coerce.date({ errorMap: () => ({ message: 'Hạn chót không hợp lệ' }) }),
-    assigneeId: z.number().int().positive().nullable().optional(),
   })
   .superRefine((d, ctx) => {
     const label = TASK_TYPE_LABEL[d.type];
@@ -152,8 +151,6 @@ const eventSchema = z
     offlineContent: z.string().trim().max(5000).optional().nullable(),
     photographerNeeded: z.boolean().default(true),
     photographerQuantity: z.number().int().min(0).max(20).default(1),
-    photographerAssigneeId: z.number().int().positive().nullable().optional(),
-    recapAssigneeId: z.number().int().positive().nullable().optional(),
     memberIds: z.array(z.number().int().positive()).default([]),
     deliverables: z.array(deliverableSchema).max(30).default([]),
     /** true = "Gửi & phân công", false = "Lưu nháp" */
@@ -173,16 +170,6 @@ const eventSchema = z
       if (d.deliverables.length === 0 && !d.photographerNeeded) {
         ctx.addIssue({ code: 'custom', path: ['deliverables'], message: 'Chọn ít nhất 1 ấn phẩm hoặc bật chụp ảnh' });
       }
-    }
-    // Người nhận task phải thuộc nhóm BTT đã chọn
-    const members = new Set(d.memberIds);
-    const assignees = [
-      ...d.deliverables.map((x) => x.assigneeId),
-      d.photographerAssigneeId,
-      d.recapAssigneeId,
-    ].filter((x): x is number => typeof x === 'number');
-    if (assignees.some((a) => !members.has(a))) {
-      ctx.addIssue({ code: 'custom', path: ['memberIds'], message: 'Người nhận task phải nằm trong nhóm BTT phụ trách' });
     }
   });
 
@@ -217,7 +204,6 @@ async function syncTasks(tx: Prisma.TransactionClient, eventId: number, d: Event
       title: item.type === 'OTHER' ? item.title! : item.title || TASK_TYPE_LABEL[item.type],
       dimensions: item.dimensions || null,
       deadline: item.deadline,
-      assigneeId: item.assigneeId ?? null,
     };
     const match = item.id ? existing.find((t) => t.id === item.id) : undefined;
     if (item.id && !match) throw badRequest(`Task #${item.id} không thuộc sự kiện này`);
@@ -232,7 +218,6 @@ async function syncTasks(tx: Prisma.TransactionClient, eventId: number, d: Event
       title: TASK_TYPE_LABEL.PHOTOGRAPHER,
       dimensions: `${d.photographerQuantity} người chụp ảnh`,
       deadline: d.startsAt,
-      assigneeId: d.photographerAssigneeId ?? null,
     };
     if (photo) await tx.task.update({ where: { id: photo.id }, data });
     else await tx.task.create({ data: { ...data, eventId, type: 'PHOTOGRAPHER' } });
@@ -245,7 +230,6 @@ async function syncTasks(tx: Prisma.TransactionClient, eventId: number, d: Event
   const recapData = {
     title: TASK_TYPE_LABEL.RECAP,
     deadline: addDays(d.endsAt, config.recapDueDays),
-    assigneeId: d.recapAssigneeId ?? null,
   };
   if (recap) await tx.task.update({ where: { id: recap.id }, data: recapData });
   else await tx.task.create({ data: { ...recapData, eventId, type: 'RECAP' } });
@@ -267,7 +251,7 @@ async function notifyAfterSave(
     recipientIds: added,
     type: 'EVENT_ASSIGNED',
     title: 'Bạn được phân công sự kiện mới',
-    body: `${user.fullName} đã phân công bạn vào "${event.name}". Xem các task được giao.`,
+    body: `${user.fullName} đã phân công bạn phụ trách "${event.name}". Mở app để xem các task của sự kiện.`,
     eventId: event.id,
     sentById: user.id,
   });

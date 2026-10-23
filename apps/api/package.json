@@ -11,9 +11,9 @@
     "typecheck": "tsc --noEmit",
     "db:pull": "prisma db pull",
     "db:generate": "prisma generate",
-    "reminders:run": "tsx src/scripts/runReminders.ts",
     "smoke": "tsx src/scripts/smoke.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "digest:run": "tsx src/scripts/runDigest.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
@@ -26,6 +26,7 @@
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^4.2.1",
     "pg": "^8.16.3",
+    "web-push": "^3.6.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -33,8 +34,12 @@
     "@types/express": "^5.0.3",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.15.0",
+    "@types/web-push": "^3.6.4",
     "prisma": "^7.10.1",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

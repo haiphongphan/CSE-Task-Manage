@@ -39,11 +39,13 @@ export interface Task {
   title: string;
   dimensions: string | null;
   deadline: string;
-  assignee: MiniUser | null;
+  /** Nhóm BTT phụ trách sự kiện (task giao cho cả nhóm) — có trong danh sách của Admin */
+  team?: MiniUser[];
   status: TaskStatus;
   progress: number;
   notes: string | null;
   completedAt: string | null;
+  completedBy: MiniUser | null;
   isOverdue: boolean;
   updatedAt: string;
 }

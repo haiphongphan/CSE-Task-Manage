@@ -1,6 +1,6 @@
 # CSE Task Manage
 
-Quản lý công việc cho từng sự kiện: **BCH** tạo sự kiện và phân công cho **BTT**, BTT theo dõi task và nhận **nhắc nhở hạn chót tự động**, **Admin** quản lý tài khoản và toàn bộ task.
+Quản lý công việc cho từng sự kiện: **BCH** tạo sự kiện và phân công cho **BTT**, BTT theo dõi task và nhận **bản tin 09:00 mỗi sáng** (gộp mọi việc còn lại, gửi lên điện thoại + email), **Admin** quản lý tài khoản và toàn bộ task.
 
 | Thành phần | Công nghệ | Thư mục | Cổng mặc định |
 |---|---|---|---|
@@ -10,6 +10,7 @@ Quản lý công việc cho từng sự kiện: **BCH** tạo sự kiện và ph
 | Mobile | Expo SDK 58 + Expo Router | `apps/mobile` | 8081 (Metro) |
 
 > 📘 Muốn hiểu dự án được dựng như thế nào? Đọc **[STUDY.md](./STUDY.md)**.
+> 🚀 Đưa lên mạng (Supabase, Render, Vercel, Resend), cài lên iPhone như app và nhận thông báo: đọc **[DEPLOY.md](./DEPLOY.md)**.
 
 ---
 
@@ -24,7 +25,7 @@ Quản lý công việc cho từng sự kiện: **BCH** tạo sự kiện và ph
   - [1.6. Tài khoản demo](#16-tài-khoản-demo)
   - [1.7. Kiểm thử](#17-kiểm-thử)
 - [2. Biến môi trường](#2-biến-môi-trường)
-- [3. Thông báo đẩy (push) thật](#3-thông-báo-đẩy-push-thật)
+- [3. Thông báo & bản tin hằng ngày](#3-thông-báo--bản-tin-hằng-ngày)
 - [4. Deploy](#4-deploy)
 - [5. Lỗi thường gặp](#5-lỗi-thường-gặp)
 
@@ -141,9 +142,11 @@ npm run typecheck           # (thư mục gốc) kiểm tra kiểu TypeScript c�
 npm run db:seed && npm run smoke   # API phải đang chạy: 29 kiểm tra luồng nghiệp vụ
 ```
 
-Chạy job nhắc nhở ngay (không chờ 08:00):
-- Web: đăng nhập Admin → **Quản lý task** → nút **Chạy nhắc nhở**
-- hoặc dòng lệnh: `npm --prefix apps/api run reminders:run`
+Gửi bản tin hằng ngày ngay (không chờ 09:00):
+- Web hoặc app: đăng nhập Admin → **Quản lý task** → nút **Gửi bản tin ngay**
+- hoặc dòng lệnh: `npm --prefix apps/api run digest:run`
+
+Khi chạy local, push và email mặc định **chỉ in ra cửa sổ terminal của API** (`PUSH_PROVIDER=log`, `EMAIL_PROVIDER=log`), nên bạn đọc được nội dung bản tin ngay trong log.
 
 ### Script tiện ích ở thư mục gốc
 
@@ -171,9 +174,17 @@ Không commit file `.env` (đã có trong `.gitignore`). Mỗi app có `.env.exa
 | `JWT_EXPIRES_IN` | | `7d` | Thời hạn token |
 | `PORT` | | `4000` | Cổng API |
 | `CORS_ORIGINS` | | `http://localhost:3000` | Các domain web được gọi API, cách nhau bởi dấu phẩy |
-| `REMINDER_CRON` | | `0 8 * * *` | Lịch nhắc nhở (giờ Việt Nam) |
-| `REMINDER_RUN_ON_START` | | `true` | Chạy nhắc nhở một lần khi khởi động |
-| `PUSH_PROVIDER` | | `log` | `log` = in console; `expo` = gửi push thật |
+| `WEB_URL` | | `http://localhost:3000` | Địa chỉ web, dùng tạo link trong email |
+| `DIGEST_CRON` | | `0 9 * * *` | Lịch gửi bản tin (giờ Việt Nam) |
+| `DIGEST_HOUR` | | `9` | Giờ gửi; khởi động sau giờ này mà hôm nay chưa gửi thì gửi bù |
+| `DIGEST_CATCH_UP_ON_START` | | `true` | Bật/tắt gửi bù khi khởi động |
+| `CRON_SECRET` | | *(trống = tắt)* | Bí mật để dịch vụ hẹn giờ bên ngoài gọi `POST /api/cron/daily-digest` |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | | *(trống = chỉ in console)* | Khoá Web Push cho iPhone/trình duyệt. Tạo: `npx web-push generate-vapid-keys` |
+| `VAPID_SUBJECT` | | `mailto:admin@example.com` | Liên hệ người gửi (Apple yêu cầu) |
+| `EMAIL_PROVIDER` | | `log` | `log` = in console; `resend` = gửi thật qua Resend |
+| `RESEND_API_KEY` | | | API key Resend (`re_...`) |
+| `EMAIL_FROM` | | `CSE Task Manage <onboarding@resend.dev>` | Người gửi; cần tên miền đã xác minh trên Resend để gửi cho mọi người |
+| `PUSH_PROVIDER` | | `log` | Push cho app Android `.apk`: `log` = in console; `expo` = gửi thật |
 | `EXPO_ACCESS_TOKEN` | | | Chỉ cần nếu bật "Enhanced Push Security" trên expo.dev |
 
 **`apps/web/.env.local`**: `NEXT_PUBLIC_API_URL` (địa chỉ API).
@@ -182,93 +193,29 @@ Không commit file `.env` (đã có trong `.gitignore`). Mỗi app có `.env.exa
 
 ---
 
-## 3. Thông báo đẩy (push) thật
+## 3. Thông báo & bản tin hằng ngày
 
-Mặc định app mobile chạy **chế độ demo**: khi app đang mở, cứ 30 giây hỏi API một lần và hiện thông báo trên máy. Để nhận thông báo **cả khi app đã tắt**, bật push thật như sau. **Không cần sửa code.**
+| Khi nào | Ai nhận | Kênh |
+|---|---|---|
+| BCH gửi sự kiện / thêm BTT | BTT được phân công | trong app + push |
+| BCH bấm **Nhắc** ở một task | cả nhóm BTT của sự kiện | trong app + push |
+| BTT hoàn thành task | BCH tạo sự kiện | trong app + push |
+| **09:00 mỗi ngày** | mỗi BTT còn việc | **1** thông báo trong app + **1** push + **1** email, gộp mọi task chưa xong |
 
-1. **Tạo project trên Expo** (miễn phí):
-   ```bash
-   cd apps/mobile
-   npx eas-cli@latest login
-   npx eas-cli@latest init        # tự ghi "extra.eas.projectId" vào app.json
-   ```
-2. **Cấu hình chứng chỉ push**:
-   - Android: tạo project Firebase, tải service account key (FCM V1) rồi chạy `npx eas-cli@latest credentials` → Android → "Push Notifications: FCM V1". Hướng dẫn: https://docs.expo.dev/push-notifications/fcm-credentials/
-   - iOS: cần tài khoản Apple Developer (trả phí); EAS tự tạo khoá push khi build.
-3. **Build bản development** (Expo Go không hỗ trợ đủ push từ xa):
-   ```bash
-   npx eas-cli@latest build --profile development --platform android   # hoặc ios
-   ```
-   Cài file build lên điện thoại, chạy `npx expo start --dev-client`.
-4. **Bật push ở API**: trong `apps/api/.env` đặt `PUSH_PROVIDER=expo`, khởi động lại API.
-5. Đăng nhập trên app → app tự gửi Expo Push Token lên API (bảng `push_tokens`). Menu avatar sẽ ghi "Thông báo: Push thật (Expo)".
+Bản tin 09:00 gộp mọi ấn phẩm chưa xong, việc **phân công chụp ảnh** (từ 3 ngày trước sự kiện) và **recap** (từ hôm sau sự kiện, hạn 7 ngày). Từng task được gắn cờ *Quá hạn / Trong 48 giờ / Xác nhận chụp ảnh / Cần đăng recap*. Gửi lặp lại mỗi ngày tới khi task được đánh dấu hoàn thành; DB đảm bảo mỗi người chỉ nhận 1 bản tin/ngày.
 
-Thử: đăng nhập web bằng BCH → mở sự kiện → bấm **Nhắc** ở một task → điện thoại BTT nhận thông báo ngay.
+**Nhận thông báo trên điện thoại:**
+- **iPhone / iPad**: mở web bằng Safari → **Chia sẻ → Thêm vào MH chính** → mở từ icon → **Bật thông báo**. Đây là Web Push, miễn phí, không cần tài khoản Apple Developer. Chi tiết: **DEPLOY.md mục 4**.
+- **Android / máy tính**: Chrome, Edge hoặc Firefox → bấm **Bật thông báo** ngay trên web, hoặc cài thành app (⋮ → **Cài đặt ứng dụng**).
+- **App Android `.apk`** (tuỳ chọn): dùng Expo Push, xem **DEPLOY.md mục 7**.
+
+Thử Web Push khi chạy local: trình duyệt máy tính chấp nhận `http://localhost`. Đặt `VAPID_*` trong `apps/api/.env` → mở web bằng Chrome → **Thông báo → Bật thông báo → Gửi thử**. Còn iPhone bắt buộc phải là HTTPS, nên cần deploy lên Vercel trước.
 
 ---
 
 ## 4. Deploy
 
-Gợi ý một cấu hình miễn phí / rẻ phổ biến:
-
-```
-Vercel (web)  ──►  Render / Railway (API)  ──►  Neon / Supabase (PostgreSQL)
-EAS (mobile)  ──┘
-```
-
-### 4.1. Cơ sở dữ liệu (Neon hoặc Supabase)
-
-1. Tạo database Postgres 16, copy **connection string** (dạng `postgresql://user:pass@host/db?sslmode=require`).
-2. Nạp schema + dữ liệu từ máy bạn:
-   ```bash
-   cd db
-   psql "<CONNECTION_STRING>" -f schema.sql
-   psql "<CONNECTION_STRING>" -f seed.sql     # bỏ qua nếu không muốn dữ liệu mẫu
-   ```
-   (`pgcrypto` có sẵn trên Neon và Supabase.)
-3. Với dữ liệu thật: **đổi mật khẩu tài khoản Admin** ngay sau khi deploy, hoặc tạo Admin riêng bằng SQL thay vì dùng seed.
-
-### 4.2. API (Render)
-
-Tạo **Web Service** từ repo GitHub:
-
-| Mục | Giá trị |
-|---|---|
-| Root Directory | `apps/api` |
-| Build Command | `npm install && npm run build` |
-| Start Command | `npm start` |
-| Environment | `DATABASE_URL`, `JWT_SECRET` (chuỗi mới!), `CORS_ORIGINS=https://<tên-web>.vercel.app`, `PUSH_PROVIDER=expo` (nếu dùng push), `NODE_VERSION=22` |
-
-Kiểm tra: `https://<tên-api>.onrender.com/api/health`.
-
-> ⚠️ **Job nhắc nhở chạy bên trong process API.** Gói miễn phí của Render cho server "ngủ" khi không có truy cập → có thể lỡ mốc 08:00. Cách xử lý: dùng gói trả phí / Railway (luôn chạy), **hoặc** tạo thêm một **Render Cron Job** cùng repo với lệnh `npm install && npx tsx src/scripts/runReminders.ts`, lịch `0 1 * * *` (01:00 UTC = 08:00 giờ VN). Nhờ chống trùng trong DB nên chạy nhiều nơi cũng không gửi trùng.
-
-### 4.3. Web (Vercel)
-
-1. Import repo trên vercel.com, **Root Directory** = `apps/web` (Vercel tự nhận Next.js).
-2. Environment Variable: `NEXT_PUBLIC_API_URL=https://<tên-api>.onrender.com/api`
-3. Deploy, rồi **thêm domain Vercel vào `CORS_ORIGINS` của API** (nếu chưa).
-
-### 4.4. App mobile (EAS)
-
-```bash
-cd apps/mobile
-npx eas-cli@latest init                                   # nếu chưa làm ở mục 3
-npx eas-cli@latest build:configure                        # tạo eas.json
-npx eas-cli@latest env:create --name EXPO_PUBLIC_API_URL --value https://<tên-api>.onrender.com/api --environment production
-npx eas-cli@latest build --profile preview --platform android    # ra file .apk cài trực tiếp
-npx eas-cli@latest build --profile production --platform all     # bản phát hành
-npx eas-cli@latest submit --platform android                     # gửi lên Google Play (cần tài khoản dev)
-```
-Cập nhật nhanh phần JavaScript mà không build lại: `npx eas-cli@latest update`.
-
-### 4.5. Checklist trước khi dùng thật
-
-- [ ] `JWT_SECRET` mới, dài, khác bản local
-- [ ] Đổi mật khẩu / xoá các tài khoản demo
-- [ ] `CORS_ORIGINS` chỉ chứa domain web thật
-- [ ] Sao lưu DB định kỳ (Neon/Supabase có sẵn)
-- [ ] Cân nhắc lưu token web bằng cookie `httpOnly` (xem STUDY.md mục 11)
+Xem **[DEPLOY.md](./DEPLOY.md)**: hướng dẫn từng bước với Supabase (DB), Render (API), Vercel (web), Resend (email), GitHub Actions (hẹn giờ 09:00), EAS (file `.apk` Android và TestFlight iOS).
 
 ---
 

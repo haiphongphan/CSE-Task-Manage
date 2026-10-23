@@ -85,7 +85,7 @@ export async function pollAndNotify(lastId: number): Promise<number> {
     // lastId = 0 là lần đầu mở app: chỉ ghi nhớ mốc, không bắn lại thông báo cũ
     for (const n of fresh.reverse()) {
       await Notifications.scheduleNotificationAsync({
-        content: { title: n.title, body: n.body, data: { eventId: n.eventId } },
+        content: { title: n.title, body: n.body, data: { eventId: n.eventId, type: n.type } },
         trigger: null, // hiện ngay
       });
     }

@@ -3,13 +3,14 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Bell, KeyRound, Layers2, LogOut } from 'lucide-react';
+import { Bell, KeyRound, Layers2, LogOut, BellRing } from 'lucide-react';
 import { useAuth, useRequireRole } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { fmtDayTime } from '@/lib/format';
 import type { AppNotification, Role } from '@/lib/types';
 import { Avatar, Loading, cx } from './ui';
+import { PushBanner } from './PushPrompt';
 
 const NAV: Record<Role, { href: string; label: string }[]> = {
   ADMIN: [
@@ -62,7 +63,8 @@ export function AppShell({ roles, children }: { roles: Role[]; children: ReactNo
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-40 bg-navy text-white">
+      {/* pt-[env(safe-area-inset-top)]: chừa chỗ cho thanh trạng thái khi chạy như app trên iPhone */}
+      <header className="sticky top-0 z-40 bg-navy pt-[env(safe-area-inset-top)] text-white">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-4 px-4 sm:h-20 sm:px-10">
           <Link href="/" className="flex items-center gap-2.5">
             <span className="flex size-[34px] items-center justify-center rounded-[9px] bg-primary">
@@ -81,7 +83,10 @@ export function AppShell({ roles, children }: { roles: Role[]; children: ReactNo
         {/* Mobile: hàng tab bên dưới (giống Figma bản Mobile) */}
         <nav className="flex gap-2 px-3 pb-3 md:hidden">{navLinks}</nav>
       </header>
-      <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 sm:px-10 sm:py-10">{children}</main>
+      <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-8 pb-[max(2rem,env(safe-area-inset-bottom))] sm:px-10 sm:py-10">
+        <PushBanner />
+        {children}
+      </main>
     </div>
   );
 }
@@ -114,6 +119,9 @@ function UserMenu() {
               @{user.username} · {user.role}
             </p>
           </div>
+          <Link href="/notifications" className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-soft">
+            <BellRing className="size-4 text-primary" /> Cài đặt thông báo
+          </Link>
           <Link href="/change-password" className="flex items-center gap-2 px-4 py-3 text-sm hover:bg-soft">
             <KeyRound className="size-4 text-primary" /> Đổi mật khẩu
           </Link>
@@ -140,6 +148,7 @@ function NotificationBell() {
     setOpen(false);
     void reload();
     if (n.eventId) router.push(`/events/${n.eventId}`);
+    else if (n.type === 'DAILY_DIGEST') router.push('/btt/reminders');
   };
 
   return (

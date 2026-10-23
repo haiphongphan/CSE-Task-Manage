@@ -23,8 +23,9 @@ export const presentMiniUser = (u: MiniUser | null | undefined) =>
   u ? { id: u.id, fullName: u.fullName, role: u.role } : null;
 
 export type TaskWithRelations = Task & {
-  assignee?: MiniUser | null;
-  event?: Pick<Event, 'id' | 'name'> | null;
+  completedBy?: MiniUser | null;
+  // Task giao cho CẢ NHÓM BTT của sự kiện -> kèm danh sách thành viên nếu có
+  event?: (Pick<Event, 'id' | 'name'> & { members?: { user: MiniUser }[] }) | null;
 };
 
 export function presentTask(t: TaskWithRelations, now = new Date()) {
@@ -33,15 +34,16 @@ export function presentTask(t: TaskWithRelations, now = new Date()) {
     code: t.code,
     eventId: t.eventId,
     event: t.event ? { id: t.event.id, name: t.event.name } : undefined,
+    team: t.event?.members?.map((m) => presentMiniUser(m.user)!) ?? undefined,
     type: t.type,
     title: t.title,
     dimensions: t.dimensions,
     deadline: t.deadline,
-    assignee: presentMiniUser(t.assignee),
     status: t.status,
     progress: t.progress,
     notes: t.notes,
     completedAt: t.completedAt,
+    completedBy: presentMiniUser(t.completedBy), // ai bấm hoàn thành
     isOverdue: t.status !== 'COMPLETED' && t.deadline < now,
     updatedAt: t.updatedAt,
   };

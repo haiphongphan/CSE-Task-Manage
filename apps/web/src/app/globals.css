@@ -44,3 +44,35 @@ body {
     @apply text-[11px] uppercase tracking-wide text-primary;
   }
 }
+
+/* Con trỏ "bàn tay" cho mọi thứ bấm được (Tailwind 4 mặc định để button là con trỏ thường) */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='switch'],
+  [role='radio'],
+  [role='option'],
+  a[href],
+  summary,
+  label:has(> input[type='checkbox']),
+  input[type='checkbox'],
+  input[type='range'] {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+}
+
+/* Hiệu ứng mở popover (dropdown, lịch, chọn giờ) */
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

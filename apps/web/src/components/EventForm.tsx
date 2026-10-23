@@ -1,32 +1,17 @@
 'use client';
 // Form tạo / sửa sự kiện của BCH (Figma: "BCH event and task creation")
-// + phần bổ sung "05 · Phân công Ban Truyền thông" (chọn nhiều BTT, giao từng task).
+// Flow phân công: BCH chọn các BTT phụ trách ngay trong mục 01. Mọi task
+// (ấn phẩm, chụp ảnh, recap) giao cho CẢ NHÓM đó — không giao riêng từng người.
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
-import {
-  ArrowLeft,
-  ArrowRight,
-  CalendarDays,
-  Camera,
-  CheckCircle2,
-  CheckSquare,
-  Clock,
-  Info,
-  MapPin,
-  Minus,
-  Plus,
-  Sparkles,
-  Square,
-  Trash2,
-  Users,
-  X,
-} from 'lucide-react';
-import { Alert, Avatar, Badge, Button, Field, Toggle, cx } from './ui';
+import { useState } from 'react';
+import { ArrowLeft, ArrowRight, CalendarDays, Camera, CheckCircle2, CheckSquare, Info, MapPin, Minus, Plus, Sparkles, Square, Trash2, Users, X } from 'lucide-react';
+import { Alert, Badge, Button, Field, Toggle, cx } from './ui';
+import { DatePicker, MemberPicker, TimePicker, formatYmd } from './pickers';
 import { api, type ApiError } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { FLASH_KEY } from '@/lib/flash';
-import { fmtDate, fromInputs, TASK_TYPE_LABEL, toDateInput, toTimeInput } from '@/lib/format';
+import { fromInputs, TASK_TYPE_LABEL, toDateInput, toTimeInput } from '@/lib/format';
 import type { EventDetail, MiniUser } from '@/lib/types';
 
 const DELIVERABLES = ['BANNER', 'BACKDROP', 'BANDROLL', 'STANDEE', 'INVITATION_LETTER', 'OTHER'] as const;
@@ -39,7 +24,6 @@ interface DeliverableState {
   dimensions: string;
   date: string;
   time: string;
-  assigneeId: string; // '' = chưa giao
 }
 
 function initialDeliverables(event?: EventDetail) {
@@ -53,7 +37,6 @@ function initialDeliverables(event?: EventDetail) {
         dimensions: t.dimensions ?? '',
         date: toDateInput(t.deadline),
         time: toTimeInput(t.deadline),
-        assigneeId: t.assignee ? String(t.assignee.id) : '',
       };
     });
   return map;
@@ -74,9 +57,6 @@ export function EventForm({ event }: { event?: EventDetail }) {
   const { data: bttData } = useApi<{ items: (MiniUser & { username: string })[] }>('/users/options?role=BTT');
   const btts = bttData?.items ?? [];
 
-  const photoTask = event?.tasks.find((t) => t.type === 'PHOTOGRAPHER');
-  const recapTask = event?.tasks.find((t) => t.type === 'RECAP');
-
   const [info, setInfo] = useState({
     name: event?.name ?? '',
     location: event?.location ?? '',
@@ -88,46 +68,28 @@ export function EventForm({ event }: { event?: EventDetail }) {
     offlineContent: event?.offlineContent ?? '',
   });
   const [deliverables, setDeliverables] = useState(() => initialDeliverables(event));
-  const [photo, setPhoto] = useState({
-    needed: event?.photographerNeeded ?? true,
-    quantity: event?.photographerQuantity || 1,
-    assigneeId: photoTask?.assignee ? String(photoTask.assignee.id) : '',
-  });
+  const [photo, setPhoto] = useState({ needed: event?.photographerNeeded ?? true, quantity: event?.photographerQuantity || 1 });
   const [memberIds, setMemberIds] = useState<number[]>(event?.members.map((m) => m.id) ?? []);
-  const [recapAssigneeId, setRecapAssigneeId] = useState(recapTask?.assignee ? String(recapTask.assignee.id) : '');
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState<'draft' | 'publish' | null>(null);
 
   const selectedTypes = DELIVERABLES.filter((t) => deliverables[t]);
   const members = btts.filter((u) => memberIds.includes(u.id));
   const taskCount = selectedTypes.length + (photo.needed ? 1 : 0) + 1; // +1 recap
+  const today = toDateInput(new Date().toISOString());
 
-  const setI = (k: keyof typeof info) => (e: { target: { value: string } }) => setInfo({ ...info, [k]: e.target.value });
+  const setI = (k: keyof typeof info) => (v: string) => setInfo({ ...info, [k]: v });
 
   function toggleDeliverable(type: DeliverableType) {
     setDeliverables((cur) => {
       const next = { ...cur };
       if (next[type]) delete next[type];
-      else next[type] = { title: '', dimensions: '', date: dayBefore(info.date), time: '17:00', assigneeId: '' };
+      else next[type] = { title: '', dimensions: '', date: dayBefore(info.date), time: '17:00' };
       return next;
     });
   }
   const updateDeliverable = (type: DeliverableType, patch: Partial<DeliverableState>) =>
     setDeliverables((cur) => ({ ...cur, [type]: { ...cur[type]!, ...patch } }));
-
-  function toggleMember(id: number) {
-    const removing = memberIds.includes(id);
-    setMemberIds(removing ? memberIds.filter((m) => m !== id) : [...memberIds, id]);
-    if (removing) {
-      // Bỏ người này khỏi các task đã giao
-      const sid = String(id);
-      setDeliverables((cur) =>
-        Object.fromEntries(Object.entries(cur).map(([k, v]) => [k, v && v.assigneeId === sid ? { ...v, assigneeId: '' } : v])),
-      );
-      if (photo.assigneeId === sid) setPhoto({ ...photo, assigneeId: '' });
-      if (recapAssigneeId === sid) setRecapAssigneeId('');
-    }
-  }
 
   /** Kiểm tra phía trình duyệt cho phản hồi nhanh — API vẫn kiểm tra lại */
   function validate(publish: boolean) {
@@ -136,16 +98,14 @@ export function EventForm({ event }: { event?: EventDetail }) {
     if (!info.location.trim()) errs.push('Vui lòng nhập địa điểm');
     if (!info.date) errs.push('Vui lòng chọn ngày sự kiện');
     if (info.endTime <= info.startTime) errs.push('Giờ kết thúc phải sau giờ bắt đầu');
+    if (publish && memberIds.length === 0) errs.push('Chọn ít nhất 1 thành viên BTT phụ trách (mục 01)');
     for (const t of selectedTypes) {
       const d = deliverables[t]!;
       if (DIM_REQUIRED.includes(t) && !d.dimensions.trim()) errs.push(`${TASK_TYPE_LABEL[t]}: cần nhập kích thước`);
       if (t === 'OTHER' && !d.title.trim()) errs.push('Ấn phẩm “Khác”: cần nhập loại ấn phẩm');
       if (!d.date || !d.time) errs.push(`${TASK_TYPE_LABEL[t]}: cần chọn hạn chót`);
     }
-    if (publish) {
-      if (memberIds.length === 0) errs.push('Chọn ít nhất 1 thành viên BTT phụ trách (mục 05)');
-      if (selectedTypes.length === 0 && !photo.needed) errs.push('Chọn ít nhất 1 ấn phẩm hoặc bật chụp ảnh');
-    }
+    if (publish && selectedTypes.length === 0 && !photo.needed) errs.push('Chọn ít nhất 1 ấn phẩm hoặc bật chụp ảnh');
     return errs;
   }
 
@@ -154,7 +114,6 @@ export function EventForm({ event }: { event?: EventDetail }) {
     setErrors(errs);
     if (errs.length) return window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    const toId = (v: string) => (v ? Number(v) : null);
     const body = {
       name: info.name,
       location: info.location,
@@ -165,8 +124,6 @@ export function EventForm({ event }: { event?: EventDetail }) {
       offlineContent: info.offlineContent || null,
       photographerNeeded: photo.needed,
       photographerQuantity: photo.needed ? photo.quantity : 0,
-      photographerAssigneeId: photo.needed ? toId(photo.assigneeId) : null,
-      recapAssigneeId: toId(recapAssigneeId),
       memberIds,
       deliverables: selectedTypes.map((type) => {
         const d = deliverables[type]!;
@@ -176,7 +133,6 @@ export function EventForm({ event }: { event?: EventDetail }) {
           title: type === 'OTHER' ? d.title : undefined,
           dimensions: d.dimensions || null,
           deadline: fromInputs(d.date, d.time),
-          assigneeId: toId(d.assigneeId),
         };
       }),
       publish,
@@ -188,12 +144,10 @@ export function EventForm({ event }: { event?: EventDetail }) {
         method: isEdit ? 'PUT' : 'POST',
         body,
       });
-      const title = publish
-        ? isEdit && !isDraft
-          ? 'Đã lưu thay đổi'
-          : 'Đã tạo sự kiện và phân công task'
-        : 'Đã lưu bản nháp';
-      const detail = publish ? `${res.event.name} đã có trong danh sách. BTT đã được thông báo.` : `${res.event.name} chỉ mình bạn thấy cho tới khi gửi.`;
+      const title = publish ? (isEdit && !isDraft ? 'Đã lưu thay đổi' : 'Đã tạo sự kiện và phân công cho BTT') : 'Đã lưu bản nháp';
+      const detail = publish
+        ? `${res.event.name} đã có trong danh sách. ${members.length} thành viên BTT đã được thông báo.`
+        : `${res.event.name} chỉ mình bạn thấy cho tới khi gửi.`;
       sessionStorage.setItem(FLASH_KEY, `${title}|${detail}`);
       router.push('/bch/events');
     } catch (err) {
@@ -211,17 +165,6 @@ export function EventForm({ event }: { event?: EventDetail }) {
     router.push('/bch/events');
   }
 
-  const assigneeSelect = (value: string, onChange: (v: string) => void) => (
-    <select className="input" value={value} onChange={(e) => onChange(e.target.value)} disabled={members.length === 0}>
-      <option value="">{members.length ? '— Cả nhóm phụ trách —' : 'Chọn BTT ở mục 05 trước'}</option>
-      {members.map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.fullName}
-        </option>
-      ))}
-    </select>
-  );
-
   const summaryActions = (
     <>
       <Button onClick={() => submit(true)} loading={saving === 'publish'} disabled={!!saving} icon={<ArrowRight className="size-4" />}>
@@ -237,7 +180,6 @@ export function EventForm({ event }: { event?: EventDetail }) {
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Tiêu đề */}
       <div className="flex flex-col gap-3">
         <p className="eyebrow">BCH / Ban Chấp hành</p>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -269,32 +211,44 @@ export function EventForm({ event }: { event?: EventDetail }) {
 
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_320px]">
         <div className="flex flex-col gap-6">
-          {/* 01 */}
+          {/* 01 — thông tin chung + BTT phụ trách */}
           <section className="card flex flex-col gap-4 p-5">
             <SectionTitle no="01" title="Thông tin chung" desc="Những gì đội media cần biết." />
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Tên sự kiện *">
-                <input className="input" value={info.name} onChange={setI('name')} placeholder="Ngày hội Sáng tạo CSE" />
+                <input className="input" value={info.name} onChange={(e) => setI('name')(e.target.value)} placeholder="Ngày hội Sáng tạo CSE" />
               </Field>
               <Field label="Địa điểm *">
                 <div className="relative">
-                  <input className="input pr-10" value={info.location} onChange={setI('location')} placeholder="Hội trường A, Tòa nhà CSE" />
+                  <input className="input pr-10" value={info.location} onChange={(e) => setI('location')(e.target.value)} placeholder="Hội trường A, Tòa nhà CSE" />
                   <MapPin className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-primary" />
                 </div>
               </Field>
-              <Field label="Ngày diễn ra *">
-                <input type="date" className="input" value={info.date} onChange={setI('date')} />
+              <Field custom label="Ngày diễn ra *">
+                <DatePicker value={info.date} onChange={setI('date')} min={isEdit ? undefined : today} />
               </Field>
-              <Field label="Thời gian *">
+              <Field custom label="Thời gian *">
                 <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                  <input type="time" className="input" value={info.startTime} onChange={setI('startTime')} />
+                  <TimePicker value={info.startTime} onChange={setI('startTime')} />
                   <span className="text-muted">–</span>
-                  <input type="time" className="input" value={info.endTime} onChange={setI('endTime')} />
+                  <TimePicker value={info.endTime} onChange={setI('endTime')} />
                 </div>
               </Field>
             </div>
+            <Field
+              custom
+              label="Ban Truyền thông phụ trách *"
+              hint="Các thành viên được chọn cùng phụ trách mọi task của sự kiện và nhận bản tin nhắc việc lúc 09:00 mỗi ngày."
+            >
+              <MemberPicker people={btts} value={memberIds} onChange={setMemberIds} placeholder="Chọn thành viên BTT" />
+            </Field>
             <Field label="Ghi chú chi tiết / Thông tin recap">
-              <textarea className="input min-h-[96px]" value={info.notes} onChange={setI('notes')} placeholder="Mô tả sự kiện, khoảnh khắc cần ghi lại, nội dung recap..." />
+              <textarea
+                className="input min-h-[96px]"
+                value={info.notes}
+                onChange={(e) => setI('notes')(e.target.value)}
+                placeholder="Mô tả sự kiện, khoảnh khắc cần ghi lại, nội dung recap..."
+              />
             </Field>
           </section>
 
@@ -334,7 +288,7 @@ export function EventForm({ event }: { event?: EventDetail }) {
                     <span className="flex items-center gap-2 text-sm text-navy">
                       <CheckCircle2 className="size-4 text-primary" /> {TASK_TYPE_LABEL[t]}
                     </span>
-                    <button type="button" onClick={() => toggleDeliverable(t)} aria-label={`Bỏ ${TASK_TYPE_LABEL[t]}`}>
+                    <button type="button" onClick={() => toggleDeliverable(t)} aria-label={`Bỏ ${TASK_TYPE_LABEL[t]}`} className="rounded p-1 hover:bg-white">
                       <X className="size-4 text-primary" />
                     </button>
                   </div>
@@ -349,15 +303,12 @@ export function EventForm({ event }: { event?: EventDetail }) {
                         <input className="input" value={d.dimensions} onChange={(e) => updateDeliverable(t, { dimensions: e.target.value })} placeholder="1920 × 1080 px" />
                       </Field>
                     </div>
-                    <div className="flex flex-col gap-3">
-                      <Field label="Hạn chót *" hint="ICT (UTC+7)">
-                        <div className="grid grid-cols-[1fr_96px] gap-2">
-                          <input type="date" className="input" value={d.date} onChange={(e) => updateDeliverable(t, { date: e.target.value })} />
-                          <input type="time" className="input" value={d.time} onChange={(e) => updateDeliverable(t, { time: e.target.value })} />
-                        </div>
-                      </Field>
-                      <Field label="Giao cho">{assigneeSelect(d.assigneeId, (v) => updateDeliverable(t, { assigneeId: v }))}</Field>
-                    </div>
+                    <Field custom label="Hạn chót *" hint="ICT (UTC+7)">
+                      <div className="grid grid-cols-[1fr_110px] gap-2">
+                        <DatePicker value={d.date} onChange={(v) => updateDeliverable(t, { date: v })} />
+                        <TimePicker value={d.time} onChange={(v) => updateDeliverable(t, { time: v })} />
+                      </div>
+                    </Field>
                   </div>
                 </div>
               );
@@ -369,10 +320,10 @@ export function EventForm({ event }: { event?: EventDetail }) {
             <SectionTitle no="03" title="Nội dung ấn phẩm" desc="Giữ thông điệp online và nội dung in ấn thống nhất." />
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Nội dung ấn phẩm online">
-                <textarea className="input min-h-[110px]" value={info.onlineContent} onChange={setI('onlineContent')} />
+                <textarea className="input min-h-[110px]" value={info.onlineContent} onChange={(e) => setI('onlineContent')(e.target.value)} />
               </Field>
               <Field label="Nội dung ấn phẩm in ấn">
-                <textarea className="input min-h-[110px]" value={info.offlineContent} onChange={setI('offlineContent')} />
+                <textarea className="input min-h-[110px]" value={info.offlineContent} onChange={(e) => setI('offlineContent')(e.target.value)} />
               </Field>
             </div>
           </section>
@@ -388,63 +339,24 @@ export function EventForm({ event }: { event?: EventDetail }) {
               <Toggle checked={photo.needed} onChange={(v) => setPhoto({ ...photo, needed: v })} label="Cần chụp ảnh" />
             </div>
             {photo.needed && (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-xs text-navy">Số người chụp *</p>
-                    <p className="text-[11px] text-muted">{info.date ? `${fmtDate(fromInputs(info.date, info.startTime))} · ${info.startTime}–${info.endTime}` : 'Chọn ngày ở mục 01'}</p>
-                  </div>
-                  <div className="flex items-center rounded-lg border border-line bg-white">
-                    <button type="button" className="p-2.5 text-primary" onClick={() => setPhoto({ ...photo, quantity: Math.max(1, photo.quantity - 1) })} aria-label="Giảm">
-                      <Minus className="size-4" />
-                    </button>
-                    <span className="w-8 text-center text-sm">{photo.quantity}</span>
-                    <button type="button" className="p-2.5 text-primary" onClick={() => setPhoto({ ...photo, quantity: Math.min(20, photo.quantity + 1) })} aria-label="Tăng">
-                      <Plus className="size-4" />
-                    </button>
-                  </div>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs text-navy">Số người chụp *</p>
+                  <p className="text-[11px] text-muted">{info.date ? `${formatYmd(info.date)} · ${info.startTime}–${info.endTime}` : 'Chọn ngày ở mục 01'}</p>
                 </div>
-                <Field label="Người phụ trách xác nhận chụp ảnh">{assigneeSelect(photo.assigneeId, (v) => setPhoto({ ...photo, assigneeId: v }))}</Field>
+                <div className="flex items-center rounded-lg border border-line bg-white">
+                  <button type="button" className="p-2.5 text-primary" onClick={() => setPhoto({ ...photo, quantity: Math.max(1, photo.quantity - 1) })} aria-label="Giảm">
+                    <Minus className="size-4" />
+                  </button>
+                  <span className="w-8 text-center text-sm">{photo.quantity}</span>
+                  <button type="button" className="p-2.5 text-primary" onClick={() => setPhoto({ ...photo, quantity: Math.min(20, photo.quantity + 1) })} aria-label="Tăng">
+                    <Plus className="size-4" />
+                  </button>
+                </div>
               </div>
             )}
-            <p className="text-[11px] text-muted">BTT nhận nhắc nhở mỗi ngày từ 3 ngày trước sự kiện cho tới khi đánh dấu hoàn thành.</p>
-          </section>
-
-          {/* 05 — phần bổ sung so với Figma */}
-          <section className="card flex flex-col gap-4 p-5">
-            <SectionTitle no="05" title="Phân công Ban Truyền thông" desc="Chọn các thành viên BTT phụ trách sự kiện (chọn được nhiều người)." />
-            {btts.length === 0 ? (
-              <p className="text-sm text-muted">Chưa có tài khoản BTT nào.</p>
-            ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {btts.map((u) => {
-                  const on = memberIds.includes(u.id);
-                  return (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => toggleMember(u.id)}
-                      className={cx(
-                        'flex items-center gap-3 rounded-lg border p-3 text-left transition',
-                        on ? 'border-primary bg-ice' : 'border-line bg-white hover:bg-soft',
-                      )}
-                    >
-                      {on ? <CheckSquare className="size-4 shrink-0 text-primary" /> : <Square className="size-4 shrink-0 text-line" />}
-                      <Avatar name={u.fullName} size={28} />
-                      <span className="min-w-0">
-                        <span className="block truncate text-[13px] text-navy">{u.fullName}</span>
-                        <span className="block text-[11px] text-muted">@{u.username}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <Field label="Người phụ trách recap sau sự kiện" hint="Hạn recap = 7 ngày sau khi sự kiện kết thúc. Nhắc mỗi ngày từ hôm sau sự kiện.">
-              {assigneeSelect(recapAssigneeId, setRecapAssigneeId)}
-            </Field>
             <p className="text-[11px] text-muted">
-              Task để “Cả nhóm phụ trách” sẽ hiện cho mọi BTT đã chọn; nhắc nhở gửi tới cả nhóm.
+              Từ 3 ngày trước sự kiện, task chụp ảnh được đưa vào bản tin nhắc việc hằng ngày của BTT cho tới khi đánh dấu hoàn thành. Recap được nhắc từ hôm sau sự kiện (hạn 7 ngày).
             </p>
           </section>
 
@@ -452,7 +364,7 @@ export function EventForm({ event }: { event?: EventDetail }) {
             <div>
               <p className="text-[13px] text-navy">Sẵn sàng gửi cho đội media?</p>
               <p className="text-[11px] text-muted">
-                {selectedTypes.length} ấn phẩm · {photo.needed ? `${photo.quantity} người chụp` : 'không chụp ảnh'} · {taskCount} task sẽ giao cho {memberIds.length} BTT
+                {selectedTypes.length} ấn phẩm · {photo.needed ? `${photo.quantity} người chụp` : 'không chụp ảnh'} · {taskCount} task cho {memberIds.length} BTT
               </p>
             </div>
             <div className="flex gap-2">
@@ -474,7 +386,7 @@ export function EventForm({ event }: { event?: EventDetail }) {
             <p className="text-[15px] text-navy">{info.name || 'Sự kiện chưa đặt tên'}</p>
             <p className="flex items-center gap-2 text-[11px] text-navy">
               <CalendarDays className="size-3.5 text-primary" />
-              {info.date ? `${fmtDate(fromInputs(info.date, info.startTime))} · ${info.startTime}–${info.endTime}` : 'Chưa chọn ngày'}
+              {info.date ? `${formatYmd(info.date)} · ${info.startTime}–${info.endTime}` : 'Chưa chọn ngày'}
             </p>
             <p className="flex items-center gap-2 text-[11px] text-navy">
               <MapPin className="size-3.5 text-primary" /> {info.location || 'Chưa có địa điểm'}
@@ -493,18 +405,16 @@ export function EventForm({ event }: { event?: EventDetail }) {
                 ))}
               </div>
             )}
-            <p className="text-[11px] text-primary">{taskCount} task sẽ được giao cho BTT</p>
+            <p className="text-[11px] text-primary">{taskCount} task sẽ giao cho nhóm BTT</p>
             {summaryActions}
-            <p className="text-[11px] text-muted">
-              “Gửi & phân công” giao task cho BTT và quay về danh sách. “Lưu nháp” giữ brief ở dạng nháp.
-            </p>
+            <p className="text-[11px] text-muted">“Gửi & phân công” thông báo cho BTT và quay về danh sách. “Lưu nháp” giữ brief ở dạng nháp.</p>
           </div>
           <div className="flex flex-col gap-2 rounded-xl bg-navy p-5 text-white">
             <Sparkles className="size-5 text-sky" />
             <p className="text-[15px]">Brief rõ ràng. Sự kiện suôn sẻ.</p>
             <p className="text-xs text-white/80">Nhập kích thước in chính xác và hạn chót thực tế. Mỗi ấn phẩm đã chọn trở thành một task theo dõi được.</p>
             <p className="flex items-center gap-1.5 text-[11px] text-sky">
-              <Camera className="size-3.5" /> <Clock className="size-3.5" /> Nhắc nhở thông minh giúp BTT đúng tiến độ.
+              <Camera className="size-3.5" /> BTT nhận bản tin gộp mọi task còn lại lúc 09:00 mỗi ngày.
             </p>
           </div>
         </aside>
@@ -532,4 +442,3 @@ function Row({ label, value }: { label: string; value: number }) {
     </div>
   );
 }
-

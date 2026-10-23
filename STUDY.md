@@ -20,6 +20,8 @@
 11. [Các quyết định thiết kế & đánh đổi](#11-các-quyết-định-thiết-kế--đánh-đổi)
 12. [Bài tập tự luyện](#12-bài-tập-tự-luyện)
 13. [Từ điển thuật ngữ](#13-từ-điển-thuật-ngữ)
+14. [Vòng 2 — Chỉnh sửa theo phản hồi](#14-vòng-2--chỉnh-sửa-theo-phản-hồi)
+15. [Vòng 3 — iPhone nhận thông báo miễn phí: PWA + Web Push](#15-vòng-3--iphone-nhận-thông-báo-miễn-phí-pwa--web-push)
 
 ---
 
@@ -35,9 +37,11 @@ Một tổ chức (VD: Đoàn – Hội khoa CSE) tổ chức nhiều sự kiệ
 | **BCH** (Ban Chấp hành) | Tạo sự kiện, chọn ấn phẩm, **chọn BTT phụ trách**, sửa sự kiện (nếu chưa diễn ra), bấm "Nhắc" từng task |
 | **BTT** (Ban Truyền thông) | Xem sự kiện được giao, đổi trạng thái task, nhận nhắc nhở tự động hằng ngày |
 
-Nhắc nhở tự động (mỗi ngày lúc 08:00, cho tới khi task hoàn thành):
-- **Phân công chụp ảnh**: bắt đầu từ 3 ngày trước sự kiện.
-- **Recap sự kiện**: bắt đầu từ ngày hôm sau sự kiện (hạn recap = kết thúc + 7 ngày).
+Task **không giao cho từng người**: BCH chọn nhóm BTT phụ trách sự kiện, cả nhóm cùng thấy và cùng làm mọi task của sự kiện đó.
+
+**Bản tin 09:00 mỗi ngày** gửi cho mỗi BTT còn việc: **1** thông báo trên điện thoại + **1** email, gộp mọi task chưa xong, cho tới khi task được đánh dấu hoàn thành. Trong đó:
+- **Phân công chụp ảnh**: chỉ đưa vào từ 3 ngày trước sự kiện.
+- **Recap sự kiện**: chỉ đưa vào từ ngày hôm sau sự kiện (hạn recap = kết thúc + 7 ngày).
 
 ### 1.2. Kiến trúc 3 tầng
 
@@ -133,7 +137,6 @@ Cách suy nghĩ: nhìn từng màn và hỏi *"thông tin này là của đối 
 users 1 ───< events (created_by)          một BCH tạo nhiều sự kiện
 users >───< events   qua event_members     nhiều BTT ↔ nhiều sự kiện
 events 1 ───< tasks                        một sự kiện có nhiều task
-users 1 ───< tasks (assignee_id)           một BTT nhận nhiều task
 users 1 ───< notifications (recipient_id)
 users 1 ───< push_tokens                   một người nhiều điện thoại
 events 1 ───< activity_logs
@@ -230,12 +233,14 @@ src/
 │   ├── users.ts      /api/users/*
 │   ├── events.ts     /api/events/*
 │   ├── tasks.ts      /api/tasks/*
-│   └── notifications.ts  /api/notifications, /api/reminders, /api/push-tokens
+│   ├── notifications.ts  /api/notifications, /api/reminders, /api/push-tokens
+│   └── cron.ts       /api/cron/daily-digest (cho dịch vụ hẹn giờ bên ngoài)
 ├── services/         ← logic nghiệp vụ dùng lại ở nhiều route
 │   ├── presenters.ts ← DB record → JSON (+ trường tính toán)
 │   ├── eventAccess.ts← ai được xem/sửa sự kiện nào
 │   ├── notify.ts     ← tạo thông báo + đẩy push
-│   └── reminders.ts  ← job nhắc nhở hằng ngày
+│   └── digest.ts     ← bản tin 09:00 gộp mọi task còn lại
+├── email/            ← "email provider" (log | Resend) + mẫu email HTML
 ├── push/index.ts     ← "push provider": log hoặc Expo
 ├── lib/              ← tiện ích nhỏ (thời gian VN, nhãn tiếng Việt, lỗi HTTP)
 └── scripts/          ← smoke test, chạy nhắc nhở thủ công
@@ -264,7 +269,8 @@ src/
 | GET | `/api/notifications` | Mọi người | Hộp thư |
 | GET | `/api/reminders` | BTT | Thẻ nhắc nhở thông minh |
 | POST/DELETE | `/api/push-tokens` | Mọi người | Đăng ký / gỡ token điện thoại |
-| POST | `/api/admin/run-reminders` | Admin | Chạy job nhắc nhở ngay (demo) |
+| POST | `/api/admin/run-digest` | Admin | Gửi bản tin hằng ngày ngay (demo) |
+| POST | `/api/cron/daily-digest` | Dịch vụ hẹn giờ (header `x-cron-secret`) | Gửi bản tin, dùng khi deploy |
 
 ### 4.3. Một request đi qua những đâu?
 
@@ -350,7 +356,7 @@ API trả kèm `permissions: { canEdit, canRemind, canUpdateTasks, canDelete }` 
 | Đăng ký chỉ BCH/BTT | `routes/auth.ts` (zod) |
 | BCH chỉ sửa khi sự kiện **chưa diễn ra** | `routes/events.ts` PUT |
 | Backdrop/Bandroll/Standee **bắt buộc kích thước** | `deliverableSchema.superRefine` |
-| Người nhận task phải nằm trong nhóm BTT đã chọn | `eventSchema.superRefine` |
+| Gửi sự kiện phải chọn ít nhất 1 BTT | `eventSchema.superRefine` |
 | Luôn có task Recap, hạn = kết thúc + 7 ngày | `syncTasks()` |
 | Task Phân công chụp ảnh, hạn = giờ bắt đầu | `syncTasks()` |
 | BTT chỉ được đổi `status`/`progress` | `routes/tasks.ts` PATCH |
@@ -433,7 +439,7 @@ Màu Figma được khai báo một lần trong `@theme`:
 
 ### 5.6. Phần thêm so với Figma
 
-- **Mục 05 "Phân công Ban Truyền thông"** trong form sự kiện: chọn nhiều BTT; mỗi ấn phẩm có ô "Giao cho" lấy từ nhóm đã chọn; chọn người phụ trách recap.
+- **Ô "Ban Truyền thông phụ trách"** nằm ngay trong mục 01 · Thông tin chung: chọn nhiều BTT bằng bộ chọn có ô tìm kiếm. Ấn phẩm không giao riêng cho ai (xem mục 14).
 - **Trang Đăng nhập, Đổi mật khẩu, Thông báo** (Figma chưa có), theo cùng phong cách.
 - **Nút "Nhắc"** ở từng task (BCH), **nút "Chạy nhắc nhở"** (Admin, để demo).
 - Ô **Họ và tên** trong form đăng ký (vì bảng ở mọi nơi hiển thị họ tên).
@@ -466,12 +472,13 @@ src/app/
 ├── index.tsx             ← mở app → chuyển theo vai trò
 ├── login.tsx, register.tsx, change-password.tsx
 └── (app)/                ← "route group": tên trong ngoặc KHÔNG vào URL
-    ├── _layout.tsx       ← chặn chưa đăng nhập; header navy cho mọi màn con
-    ├── admin/accounts.tsx, admin/tasks.tsx
-    ├── bch/events.tsx, bch/event-form.tsx
-    ├── btt/events.tsx, btt/reminders.tsx
+    ├── _layout.tsx       ← chặn chưa đăng nhập; <Stack> cho các màn chi tiết
+    ├── home.tsx          ← MỘT màn chứa mọi tab của vai trò (xem mục 14.4)
+    ├── bch/edit/[id].tsx ← sửa sự kiện
     ├── events/[id].tsx
     └── notifications.tsx
+src/screens/              ← nội dung từng tab (KHÔNG phải route)
+    AdminAccounts, AdminTasks, BchNewEvent, BchEvents, BttEvents, BttReminders
 ```
 Chuyển màn: `router.push('/events/3')`, quay lại: `router.back()`, thay màn hiện tại: `router.replace(...)`.
 
@@ -479,9 +486,8 @@ Chuyển màn: `router.push('/events/3')`, quay lại: `router.back()`, thay mà
 
 - **Địa chỉ API tự động** (`lib/api.ts`): điện thoại không hiểu `localhost` là máy Mac của bạn. App đọc `Constants.expoConfig.hostUri` (IP của máy chạy `expo start`) rồi ghép `:4000/api`. Muốn chỉ định thì đặt `EXPO_PUBLIC_API_URL`.
 - **Giờ VN tự tính** (`lib/format.ts`): engine JavaScript Hermes trên điện thoại có thể thiếu dữ liệu múi giờ, nên bản mobile tự cộng 7 giờ thay vì dùng `Intl` như web.
-- **Chọn ngày giờ**: `DateTimeField.tsx` dùng `@react-native-community/datetimepicker`; file `DateTimeField.web.tsx` là bản thay thế khi chạy trên trình duyệt. Metro (bundler của RN) **tự chọn file `.web.tsx`** khi build web, đây gọi là *platform-specific extensions*.
+- **Chọn ngày giờ, dropdown, chọn người**: tự vẽ trong `components/pickers.tsx` (bottom sheet + lịch tháng tiếng Việt + cột giờ/phút), giống hệt nhau trên iOS, Android và web; không dùng picker mặc định của hệ điều hành.
 - **Kéo để làm mới**: `<ScrollView refreshControl={<RefreshControl .../>}>` trong `components/ui.tsx` → `Screen`.
-- **Dropdown**: React Native không có `<select>`, nên `Select` trong `ui.tsx` tự làm bằng `Modal` dạng bottom sheet.
 
 ---
 
@@ -489,24 +495,32 @@ Chuyển màn: `router.push('/events/3')`, quay lại: `router.back()`, thay mà
 
 Đây là phần "khó" nhất, thiết kế để **demo được ngay** mà **sau này bật push thật không cần sửa code**.
 
-### 7.1. Job nhắc nhở hằng ngày
+### 7.1. Bản tin hằng ngày 09:00
 
-📂 `apps/api/src/services/reminders.ts`, `src/index.ts`
+📂 `apps/api/src/services/digest.ts`, `src/index.ts`, `src/routes/cron.ts`
 
 ```ts
-cron.schedule('0 8 * * *', runDailyReminders, { timezone: 'Asia/Ho_Chi_Minh' });
+cron.schedule('0 9 * * *', runDailyDigest, { timezone: 'Asia/Ho_Chi_Minh' });
 ```
-Mỗi sáng 08:00 (và một lần khi API khởi động), job quét các task **chưa xong** của sự kiện **đã gửi**:
+Mỗi sáng 09:00, với **từng BTT** có sự kiện đang thực hiện, job gom các task **chưa xong** (`collectForUser`) và gắn cờ (`reminderFlag`):
 
-| Task | Điều kiện gửi nhắc | Loại |
+| Task | Đưa vào bản tin khi | Cờ |
 |---|---|---|
-| Phân công chụp ảnh | hôm nay ≥ ngày sự kiện − 3 | `PHOTO_REMINDER` |
-| Recap sự kiện | hôm nay ≥ ngày sau ngày kết thúc | `RECAP_REMINDER` |
-| Ấn phẩm khác | hạn chót trong 48 giờ tới | `DEADLINE_ALERT` |
+| Phân công chụp ảnh | hôm nay ≥ ngày sự kiện − 3 | `PHOTO` (Xác nhận chụp ảnh) |
+| Recap sự kiện | hôm nay ≥ ngày sau ngày kết thúc | `RECAP` (Cần đăng recap) |
+| Ấn phẩm đã quá hạn | luôn | `OVERDUE` |
+| Ấn phẩm hạn trong 48 giờ | luôn | `SOON` |
+| Ấn phẩm còn xa hạn | luôn (không gắn cờ) | — |
 
-So sánh **theo ngày lịch Việt Nam** (`lib/time.ts → vnDayDiff`), không theo số giờ, vì "3 ngày trước sự kiện" là theo lịch chứ không phải đúng 72 giờ.
+Rồi gọi **một** lần `notify({ type: 'DAILY_DIGEST', ..., email })`: 1 dòng trong hộp thư + 1 push (tiêu đề "Bạn còn N việc cần làm hôm nay", nội dung tóm tắt) + 1 email HTML liệt kê đầy đủ theo từng sự kiện (`email/templates.ts`).
 
-**Chống trùng**: mỗi thông báo lưu `reminder_date` = hôm nay. Unique index (mục 3.2f) + `createManyAndReturn({ skipDuplicates: true })` (tức `INSERT ... ON CONFLICT DO NOTHING`) đảm bảo mỗi ngày chỉ một lần.
+So sánh **theo ngày lịch Việt Nam** (`lib/time.ts → vnDayDiff`), vì "3 ngày trước sự kiện" là theo lịch chứ không phải đúng 72 giờ.
+
+**Chống trùng**: mỗi bản tin lưu `reminder_date` = hôm nay. Unique index `(recipient_id, type, reminder_date)` + `createManyAndReturn({ skipDuplicates: true })` (tức `INSERT ... ON CONFLICT DO NOTHING`) đảm bảo mỗi người chỉ nhận **1 bản tin/ngày**, dù job chạy bao nhiêu lần. Nhờ vậy có thể gọi job từ **nhiều nơi** một cách an toàn:
+- `node-cron` bên trong API (khi server luôn chạy),
+- **gửi bù** khi API khởi động sau 09:00 (`catchUpDigest`, hữu ích khi Render Free vừa "thức dậy"),
+- dịch vụ ngoài gọi `POST /api/cron/daily-digest` với header `x-cron-secret` (GitHub Actions: `.github/workflows/daily-digest.yml`),
+- Admin bấm **Gửi bản tin ngay**.
 
 ### 7.2. Một đường ống duy nhất cho mọi thông báo
 
@@ -517,7 +531,7 @@ notify({ recipientIds, type, title, body, ... })
    ├─ 1. INSERT vào bảng notifications   → hiện ở chuông web + màn Thông báo
    └─ 2. getPushProvider().send(...)      → đẩy tới điện thoại (nếu có token)
 ```
-Dù là nhắc tự động, BCH bấm "Nhắc", hay BTT được phân công, **tất cả** đều gọi `notify()`.
+Dù là bản tin hằng ngày, BCH bấm "Nhắc", hay BTT được phân công, **tất cả** đều gọi `notify()`. Nếu truyền thêm `email`, `notify()` gửi email qua **email provider** (`email/index.ts`, cùng kiểu Strategy như push ở mục 7.3): `EMAIL_PROVIDER=log` in ra console, `EMAIL_PROVIDER=resend` gọi REST API của Resend bằng `fetch`, không cần cài SDK.
 
 ### 7.3. Push provider: mẫu thiết kế Strategy
 
@@ -569,7 +583,7 @@ Code nghiệp vụ chỉ biết interface `PushProvider`. Đổi sang push thậ
    - Trả `201 { event }` qua `presentEventDetail`
 3. **Web**: lưu lời nhắn vào `sessionStorage` → chuyển `/bch/events` → hiện banner "Đã tạo sự kiện và phân công task".
 4. **Điện thoại của Minh**: trong ≤ 30 giây (polling) hoặc ngay lập tức (push thật) → banner "Bạn được phân công sự kiện mới" → bấm vào → mở chi tiết.
-5. **3 ngày trước sự kiện, 08:00**: cron → `PHOTO_REMINDER` cho người phụ trách chụp ảnh, mỗi ngày một lần cho tới khi bấm "Đánh dấu hoàn thành" (`PATCH /tasks/:id {status:'COMPLETED'}`), lúc đó task có `completed_at`, BCH nhận thông báo "Đã hoàn thành", và nếu mọi task xong thì sự kiện tự chuyển "Hoàn thành".
+5. **Từ 3 ngày trước sự kiện, 09:00 mỗi sáng**: bản tin của Minh và An có thêm dòng "Phân công chụp ảnh · Xác nhận chụp ảnh" (push + email), lặp lại mỗi ngày cho tới khi một người trong nhóm bấm "Đánh dấu hoàn thành" (`PATCH /tasks/:id {status:'COMPLETED'}`), lúc đó task có `completed_at`, BCH nhận thông báo "Đã hoàn thành", và nếu mọi task xong thì sự kiện tự chuyển "Hoàn thành".
 
 ---
 
@@ -578,7 +592,7 @@ Code nghiệp vụ chỉ biết interface `PushProvider`. Đổi sang push thậ
 | Loại | Lệnh | Kiểm tra gì |
 |---|---|---|
 | Kiểu TypeScript | `npm run typecheck` (gốc) | Sai tên field, sai kiểu… ở cả 3 app |
-| Smoke test API | `npm run smoke` (API đang chạy + vừa seed) | 29 tình huống: đăng ký sai role bị chặn, BTT không sửa được hạn, BCH không sửa sự kiện đã diễn ra, hạn recap +7 ngày, job nhắc không tạo trùng… |
+| Smoke test API | `npm run smoke` (API đang chạy + vừa seed) | 31 tình huống: đăng ký sai role bị chặn, BTT không sửa được hạn, BCH không sửa sự kiện đã diễn ra, hạn recap +7 ngày, bản tin không gửi trùng, endpoint cron chặn khi sai bí mật… |
 | Build web | `npm --prefix apps/web run build` | Next.js biên dịch được toàn bộ trang |
 | Thử bằng tay | Đăng nhập 3 tài khoản demo | Trải nghiệm từng vai trò |
 
@@ -613,7 +627,9 @@ Trong quá trình làm, mình còn dùng **Playwright** (trình duyệt tự đ�
 | "Quá hạn" tính khi đọc, không lưu | Luôn đúng theo thời gian | Mỗi lần đọc phải tính; lọc "quá hạn" phải viết điều kiện SQL tương ứng |
 | Cron chạy trong process API | Đơn giản, không cần dịch vụ phụ | Nếu chạy **nhiều bản API** cùng lúc sẽ chạy job nhiều lần (đã chống trùng bằng unique index, nhưng tốn tài nguyên) → nên tách worker hoặc dùng cron của nền tảng deploy |
 | Polling 30 giây cho chuông thông báo | Không cần WebSocket | Trễ tối đa 30 giây; app lớn dùng WebSocket/SSE |
-| Email chưa gửi thật (chỉ log) | Cần tài khoản SMTP | Tích hợp Resend/SendGrid ở `routes/users.ts` |
+| Email qua Resend, mặc định `log` khi chạy local | Không cần SMTP; Render Free chặn cổng SMTP nhưng Resend đi HTTPS | Gửi cho người ngoài cần xác minh tên miền trên Resend |
+| Task giao cho cả nhóm, không cho từng người | Đúng yêu cầu: BTT chỉ cần biết sự kiện mình đảm nhận | Không biết ai "chịu trách nhiệm" từng ấn phẩm → bù lại bằng `completed_by` và nhật ký hoạt động |
+| Bản tin chạy ở 4 nơi (cron trong API, gửi bù, GitHub Actions, nút Admin) | Render Free có thể "ngủ" lúc 09:00 | Phải chống trùng chặt ở DB (unique index) |
 
 ---
 
@@ -625,7 +641,7 @@ Làm theo thứ tự độ khó tăng dần. Mỗi bài chạm đủ 3 tầng DB
    *Gợi ý:* thêm vào enum `task_type` trong `schema.sql` → `prisma db pull && prisma generate` → `DELIVERABLE_TYPES`, `DIMENSIONS_REQUIRED`, `TASK_TYPE_LABEL` ở API → `DELIVERABLES`, `DIM_REQUIRED` ở `EventForm.tsx` (web) và `event-form.tsx` (mobile).
 2. **(Dễ)** Cho BTT ghi **ghi chú** khi đổi trạng thái task (hiện BTT chỉ đổi được `status`, `progress`).
 3. **(Vừa)** Thêm bộ lọc **"Theo sự kiện"** ở trang Quản lý task của Admin (API đã hỗ trợ `?eventId=`).
-4. **(Vừa)** Gửi **email thật** khi Admin tạo tài khoản (dùng Resend, viết theo kiểu "provider" giống `push/index.ts`).
+4. **(Vừa)** Cho mỗi người **tự chọn giờ nhận bản tin** (thêm cột `digest_hour` vào `users`, cron chạy mỗi giờ và lọc theo cột này).
 5. **(Vừa)** Cho phép sự kiện **nhiều ngày** (ngày kết thúc khác ngày bắt đầu) trong form.
 6. **(Khó)** Tách `types.ts` + `format.ts` thành package dùng chung `packages/shared`.
 7. **(Khó)** Bật **push thật** trên điện thoại của bạn theo README mục "Push thật".
@@ -645,7 +661,7 @@ Làm theo thứ tự độ khó tăng dần. Mỗi bài chạm đủ 3 tầng DB
 | **Middleware** | Hàm chạy chen giữa request và handler (VD: kiểm tra đăng nhập) |
 | **Transaction** | Nhóm lệnh DB "tất cả hoặc không gì cả" |
 | **CORS** | Cơ chế trình duyệt chặn web ở domain A gọi API ở domain B trừ khi B cho phép |
-| **Cron** | Lịch chạy định kỳ, VD `0 8 * * *` = 08:00 mỗi ngày |
+| **Cron** | Lịch chạy định kỳ, VD `0 9 * * *` = 09:00 mỗi ngày |
 | **Hook** (React) | Hàm `useXxx` cho component có trạng thái / tác dụng phụ |
 | **Context** (React) | Chia sẻ dữ liệu (VD user đăng nhập) cho mọi component mà không truyền props qua từng tầng |
 | **SPA** | Ứng dụng một trang: trình duyệt tải một lần, sau đó tự vẽ lại bằng JS |
@@ -655,3 +671,137 @@ Làm theo thứ tự độ khó tăng dần. Mỗi bài chạm đủ 3 tầng DB
 | **Expo Push Token** | Mã định danh thiết bị để Expo biết gửi thông báo tới máy nào |
 | **Polling** | Hỏi server định kỳ "có gì mới không?" |
 | **Design token** | Giá trị thiết kế đặt tên (màu, font, khoảng cách) dùng thống nhất ở mọi nơi |
+
+---
+
+## 14. Vòng 2 — Chỉnh sửa theo phản hồi
+
+Sau khi dùng thử, bạn yêu cầu 6 thay đổi. Phần này ghi lại cách xử lý từng yêu cầu, cũng là ví dụ về việc **sửa một hệ thống đang chạy** xuyên suốt DB → API → web → mobile.
+
+### 14.1. Bỏ "giao task cho từng người"
+
+**Yêu cầu:** đưa phần phân công BTT vào *Thông tin chung*; ấn phẩm không cần giao cho ai; BTT chỉ nhận thông tin sự kiện mình đảm nhận.
+
+| Tầng | Thay đổi |
+|---|---|
+| DB (`schema.sql`) | Bỏ cột `tasks.assignee_id`; thêm `tasks.completed_by` (ai bấm hoàn thành, để vẫn biết "ai đã làm") |
+| API | Bỏ `assigneeId`, `photographerAssigneeId`, `recapAssigneeId` khỏi zod schema; người nhận thông báo = **mọi** `event_members`; `presentTask` trả `completedBy` |
+| Web/Mobile | Ô "Ban Truyền thông phụ trách" chuyển vào mục 01 (`MemberPicker`); bỏ ô "Giao cho" ở từng ấn phẩm; Admin chỉ xem nhóm BTT của sự kiện |
+
+> 📌 **Bài học:** xoá một cột là thay đổi "phá vỡ" (breaking change). Thứ tự an toàn: sửa DB → `prisma db pull && prisma generate` → **TypeScript sẽ báo đỏ mọi chỗ còn dùng `assigneeId`** → sửa lần lượt tới khi `npm run typecheck` sạch. Đây là lợi ích lớn nhất của việc dùng TypeScript cho cả 3 app.
+
+### 14.2. Bản tin 09:00 gộp mọi task: push + email (Resend)
+
+**Yêu cầu:** gộp toàn bộ task còn lại, thông báo trên điện thoại và gửi mail lúc 9 giờ sáng hằng ngày.
+
+- Bỏ 3 loại nhắc riêng lẻ (`PHOTO_REMINDER`, `RECAP_REMINDER`, `DEADLINE_ALERT`) → 1 loại `DAILY_DIGEST`. Chi tiết ở **mục 7.1**.
+- Thêm **email provider** (`apps/api/src/email/`) theo đúng khuôn của push provider. Đây là lợi ích của mẫu Strategy: thêm kênh mới không phải sửa code nghiệp vụ.
+- Email HTML viết bằng **inline style** và bảng đơn giản vì nhiều ứng dụng email (Gmail, Outlook) bỏ qua thẻ `<style>`. Mọi dữ liệu người dùng nhập đều qua hàm `esc()` để chống chèn HTML.
+- Unique index đổi thành `(recipient_id, type, reminder_date)` → mỗi người 1 bản tin/ngày.
+
+### 14.3. Con trỏ "bàn tay" khi trỏ vào nút
+
+Tailwind CSS v4 **đổi mặc định**: `<button>` dùng `cursor: default` như trình duyệt (v3 trước đây là `pointer`). Sửa một lần trong `globals.css` (`@layer base`): mọi `button`, `[role=button]`, `a`, `summary`, checkbox… đều `cursor: pointer`; nút bị vô hiệu hoá thì `not-allowed`.
+
+### 14.4. Chuyển tab không còn "khựng"
+
+**Web:** mỗi lần đổi trang, `useApi` cũ tải lại từ đầu và hiện "Đang tải...". Giờ `useApi` có **bộ nhớ đệm** kiểu *stale-while-revalidate*: hiện ngay dữ liệu lần trước, âm thầm tải bản mới rồi cập nhật (📂 `apps/web/src/lib/useApi.ts`). Đổi tab giờ gần như tức thì.
+
+**Mobile:** mỗi tab là một màn riêng trong `Stack`, `router.replace` huỷ màn cũ và dựng màn mới. Cách xử lý (đúng như bạn gợi ý: *"cho vô chung 1 màn hình"*):
+- Một route duy nhất `(app)/home.tsx` chứa header và hàng tab của vai trò.
+- Nội dung từng tab là component trong `src/screens/`. Tab nào đã mở thì **giữ nguyên trong bộ nhớ**, chỉ ẩn/hiện bằng `display: 'none'`, nên vị trí cuộn và dữ liệu đang nhập dở được giữ lại.
+- Tab đang chọn lưu ở `lib/workspace.ts` (biến ngoài React + `useSyncExternalStore`), nên mọi nơi gọi được `openTab('btt/reminders')`, kể cả khi bấm vào push.
+- `useOnTabActive(reload)`: mở lại tab hoặc quay về từ màn chi tiết thì tải lại ngầm.
+
+> 🐛 **Sự cố khi làm:** lần đầu mình thử navigator `Tabs` có sẵn của Expo Router (cách "chuẩn"). Kiểm tra kiểu và build đều qua, nhưng khi chạy thật thì **màn hình trắng trơn**, kể cả với `<Tabs />` trống không. Có thể do thay đổi trong phiên bản SDK 58. Thay vì tốn thời gian gỡ lỗi thư viện, mình chuyển sang cách tự quản lý ở trên: ít phụ thuộc hơn, dễ hiểu hơn. **Bài học:** "build thành công" chưa phải "chạy đúng"; luôn mở app lên thử thật.
+
+### 14.5. Bộ chọn ngày, giờ, dropdown tự thiết kế
+
+Ô `<input type="date">`, `<select>` mặc định trông khác nhau trên mỗi trình duyệt và hệ điều hành, không theo được Figma. Giờ tự vẽ:
+
+| Thành phần | Web (`components/pickers.tsx`) | Mobile (`components/pickers.tsx`) |
+|---|---|---|
+| `DatePicker` | Popover lịch tháng tiếng Việt (T2…CN), khoá ngày đã qua, nút "Hôm nay" | Bottom sheet cùng giao diện |
+| `TimePicker` | Mốc nhanh (08:00, 09:00…) + 2 cột giờ/phút | Như web |
+| `Dropdown` | Danh sách có dấu ✓, điều khiển được bằng bàn phím | Bottom sheet |
+| `MemberPicker` | Chọn nhiều BTT, ô tìm kiếm, hiện chip tên | Như web |
+
+Kỹ thuật web đáng chú ý: đóng popover khi **bấm ra ngoài** (lắng nghe `mousedown` trên `document`) hoặc **phím Esc**, và đặt `role="dialog"` / `aria-*` cho trình đọc màn hình.
+
+### 14.6. Chuẩn bị deploy
+
+- **RLS** bật trên mọi bảng (`schema.sql` cuối file): Supabase mở schema `public` ra API công khai, bật RLS mà không có policy thì khoá công khai không đọc được gì.
+- `seed.sql` thêm `SET search_path TO public, extensions` vì Supabase cài `pgcrypto` trong schema `extensions`.
+- `apps/mobile/eas.json`: 3 profile `development`, `preview` (file `.apk`), `production` (TestFlight / Google Play).
+- `.github/workflows/daily-digest.yml`: gọi bản tin lúc 09:00 giờ VN.
+- Hướng dẫn đầy đủ: **DEPLOY.md**.
+
+### 14.7. Cập nhật DB local sau vòng 2
+
+Cấu trúc bảng đã đổi nên DB cũ trên máy bạn phải tạo lại:
+```bash
+npm run db:reset                         # (thư mục gốc) schema.sql + seed.sql
+cd apps/api && npm install && npm run dev # npm install chạy lại prisma generate
+```
+
+---
+
+## 15. Vòng 3 — iPhone nhận thông báo miễn phí: PWA + Web Push
+
+**Bối cảnh:** muốn cài app iOS (TestFlight) phải trả 99 USD/năm cho Apple Developer Program. Các cách miễn phí như Xcode hay SideStore đều hết hạn sau 7 ngày và **không có push**. Giải pháp: biến web thành **PWA** (Progressive Web App). Từ iOS 16.4, Apple cho web app đã "Thêm vào MH chính" nhận **Web Push**, miễn phí và không hết hạn.
+
+### 15.1. Ba thành phần của một PWA có thông báo
+
+| Thành phần | File | Vai trò |
+|---|---|---|
+| Manifest | `apps/web/src/app/manifest.ts` | Tên, icon, màu, `display: standalone` → mở toàn màn hình như app |
+| Icon | `scripts/make-icons.mjs` → `public/icons/*`, `src/app/apple-icon.png` | Icon trên màn hình chính (iPhone dùng `apple-icon` 180×180) |
+| Service worker | `apps/web/public/sw.js` | Đoạn JS chạy **nền**, kể cả khi đã đóng app: nhận push → hiện thông báo → bấm vào thì mở đúng trang |
+
+### 15.2. Luồng Web Push từ đầu tới cuối
+
+```
+ iPhone (web app)                 API (Render)                  Apple Push Service
+ ────────────────                 ────────────                  ──────────────────
+ 1. Bấm "Bật thông báo"
+    Notification.requestPermission()
+ 2. pushManager.subscribe(VAPID public key) ─────────────────────────► cấp endpoint
+    ◄──────────────────────────────────────────────────────── endpoint + p256dh + auth
+ 3. POST /api/push/web/subscriptions ─►  lưu web_push_subscriptions
+                                        ...
+                                  4. 09:00: notify() → sendWebPush()
+                                     - mã hoá nội dung bằng p256dh/auth
+                                     - ký bằng VAPID private key
+                                     POST endpoint ───────────────────►
+ 5. sw.js nhận sự kiện 'push' ◄──────────────────────────────────────── chuyển tới máy
+    showNotification(title, body)
+ 6. Bấm thông báo → 'notificationclick' → mở /btt/reminders
+```
+
+Hai điểm cần hiểu:
+- **Mã hoá đầu-cuối:** nội dung được mã hoá bằng khoá của *chính thiết bị* (p256dh, auth), nên Apple/Google chỉ chuyển đi mà **không đọc được** nội dung.
+- **VAPID** ("Voluntary Application Server Identification"): API ký mỗi lần gửi bằng khoá *private*; trình duyệt chỉ chấp nhận push được ký bởi khoá *public* đã dùng lúc đăng ký. Kẻ khác có endpoint cũng không gửi được.
+
+### 15.3. Các file thay đổi
+
+| Tầng | Thay đổi |
+|---|---|
+| DB | Bảng `web_push_subscriptions` (`schema.sql`); DB đã có dữ liệu thì chạy `db/migrations/001_web_push.sql` |
+| API | `push/webpush.ts` (thư viện `web-push`); `notify()` gửi **cả** Web Push (iPhone/trình duyệt) **và** Expo Push (app `.apk`); endpoint `GET /push/web/public-key`, `POST/DELETE /push/web/subscriptions`, `POST /push/web/test`; tự xoá đăng ký khi nhận lỗi 404/410 (người dùng đã gỡ app) |
+| Web | `lib/webpush.ts` (bật/tắt/gửi thử, phát hiện iPhone chưa cài); `components/PushPrompt.tsx` (dải nhắc ở đầu trang + thẻ cài đặt ở trang Thông báo); `layout.tsx` (thẻ meta cho iOS, `viewport-fit: cover` + chừa "tai thỏ" bằng `env(safe-area-inset-top)`); đăng xuất thì gỡ đăng ký của máy đó |
+
+### 15.4. Những quy tắc riêng của iPhone
+
+1. Chỉ web app **mở từ icon trên màn hình chính** mới có `PushManager`. Mở trong Safari thường thì không, nên `getPushState()` trả về `ios-install` để hiện hướng dẫn cài.
+2. Phải xin quyền **ngay sau một cú bấm** của người dùng (không được tự hỏi lúc mở trang), nên ta có nút "Bật thông báo".
+3. Bắt buộc **HTTPS**. Vercel có sẵn; còn chạy local thì chỉ trình duyệt máy tính thử được (`localhost` được coi là an toàn).
+4. Mọi push **phải hiện thông báo** (`userVisibleOnly: true`), không được push "im lặng".
+
+### 15.5. Kiểm thử đã làm
+
+- **API:** giả lập một "thiết bị" bằng máy chủ HTTPS cục bộ có khoá ECDH riêng. Bấm Gửi thử và chạy bản tin 09:00 → máy chủ giả nhận được, **giải mã ra đúng nội dung**. Trả về 410 → API tự xoá đăng ký.
+- **Service worker:** dùng Chrome DevTools Protocol (`ServiceWorker.deliverPushMessage`) đẩy một tin vào → thông báo hiện đúng tiêu đề, nội dung, icon, link.
+- **Giao diện:** giả lập iPhone chưa cài → hiện hướng dẫn "Thêm vào MH chính". Ở trình duyệt có hỗ trợ: Bật → Gửi thử → Tắt đều chạy đúng.
+- **Smoke test:** 35/35.
+
+> 📌 **Bài học kiến trúc:** nhờ mọi thông báo đều đi qua một hàm `notify()` (mục 7.2), thêm cả một kênh mới (Web Push) **không phải sửa** logic bản tin, nhắc việc hay phân công.

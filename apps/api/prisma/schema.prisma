@@ -39,7 +39,8 @@ model User {
   receivedNotifications  Notification[] @relation("NotificationRecipient")
   sentNotifications      Notification[] @relation("NotificationSender")
   pushTokens             PushToken[]
-  assignedTasks          Task[]
+  webPushSubscriptions   WebPushSubscription[]
+  completedTasks         Task[]         @relation("TaskCompletedBy")
 
   @@map("users")
 }
@@ -92,19 +93,18 @@ model Task {
   title       String     @db.VarChar(150)
   dimensions  String?    @db.VarChar(100)
   deadline    DateTime   @db.Timestamptz(6)
-  assigneeId  Int?       @map("assignee_id")
   status      TaskStatus @default(TODO)
   progress    Int        @default(0) @db.SmallInt
   notes       String?
   completedAt DateTime?  @map("completed_at") @db.Timestamptz(6)
+  completedById Int?     @map("completed_by")
   createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime   @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   notifications Notification[]
-  assignee      User?          @relation(fields: [assigneeId], references: [id], onUpdate: NoAction)
+  completedBy   User?          @relation("TaskCompletedBy", fields: [completedById], references: [id], onUpdate: NoAction)
   event         Event          @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([assigneeId], map: "idx_tasks_assignee")
   @@index([eventId], map: "idx_tasks_event")
   @@map("tasks")
 }
@@ -122,6 +122,21 @@ model PushToken {
   @@map("push_tokens")
 }
 
+model WebPushSubscription {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent") @db.VarChar(300)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([userId], map: "idx_web_push_user")
+  @@map("web_push_subscriptions")
+}
+
 model Notification {
   id           Int              @id @default(autoincrement())
   recipientId  Int              @map("recipient_id")
@@ -133,6 +148,7 @@ model Notification {
   sentById     Int?             @map("sent_by")
   reminderDate DateTime?        @map("reminder_date") @db.Date
   pushSentAt   DateTime?        @map("push_sent_at") @db.Timestamptz(6)
+  emailSentAt  DateTime?        @map("email_sent_at") @db.Timestamptz(6)
   readAt       DateTime?        @map("read_at") @db.Timestamptz(6)
   dismissedAt  DateTime?        @map("dismissed_at") @db.Timestamptz(6)
   createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -198,10 +214,8 @@ enum TaskStatus {
 }
 
 enum NotificationType {
+  DAILY_DIGEST
   MANUAL_REMIND
-  PHOTO_REMINDER
-  RECAP_REMINDER
-  DEADLINE_ALERT
   EVENT_ASSIGNED
   TASK_UPDATED
 

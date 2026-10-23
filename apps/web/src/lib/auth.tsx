@@ -3,6 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, tokenStore } from './api';
+import { clearApiCache } from './useApi';
+import { disablePush, registerServiceWorker } from './webpush';
 import type { Role, User } from './types';
 
 interface AuthState {
@@ -10,7 +12,7 @@ interface AuthState {
   loading: boolean;
   login: (login: string, password: string) => Promise<User>;
   register: (data: Record<string, unknown>) => Promise<User>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -40,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
+    void registerServiceWorker(); // để nhận Web Push (xem lib/webpush.ts, public/sw.js)
   }, [refresh]);
 
   const login = async (loginId: string, password: string) => {
@@ -59,8 +62,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res.user;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await disablePush(); // máy này thôi nhận thông báo của tài khoản vừa đăng xuất
     tokenStore.clear();
+    clearApiCache();
     setUser(null);
     window.location.href = '/login';
   };

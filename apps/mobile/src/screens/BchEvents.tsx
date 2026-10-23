@@ -1,12 +1,13 @@
 // BCH · Sự kiện của tôi (Figma: "BCH event list · Mobile")
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { router } from 'expo-router';
+import { useState } from 'react';
 import { View } from 'react-native';
 import { EventStatusBadge } from '@/components/shared';
 import { Alert, Button, Card, Chips, ErrorBox, Input, Loading, PageHeader, ProgressBar, Screen, StatCard, T } from '@/components/ui';
 import { qs } from '@/lib/api';
 import { useAuth, useRoleAllowed } from '@/lib/auth';
 import { takeFlash } from '@/lib/flash';
+import { setTab, useOnTabActive } from '@/lib/workspace';
 import { useApi, useDebounced } from '@/lib/useApi';
 import { fmtDate, fmtDayTime, fmtNow, fmtRange } from '@/lib/format';
 import { colors } from '@/lib/theme';
@@ -27,15 +28,12 @@ export default function BchEventsScreen() {
   const { data, error, loading, reload } = useApi<Resp>(ok ? `/events${qs({ status, search: q })}` : null);
 
   // Quay lại màn này (sau khi tạo/sửa) -> tải lại + hiện thông báo
-  useFocusEffect(
-    useCallback(() => {
-      const f = takeFlash();
-      if (f) {
-        setFlash(f);
-        void reload();
-      }
-    }, [reload]),
-  );
+  // Mở lại tab / quay về từ màn sửa -> hiện lời nhắn (nếu có) + tải lại ngầm
+  useOnTabActive(() => {
+    const f = takeFlash();
+    if (f) setFlash(f);
+    void reload();
+  });
 
   if (!ok) return <Loading />;
   const s = data?.stats;
@@ -43,7 +41,7 @@ export default function BchEventsScreen() {
   return (
     <Screen onRefresh={reload}>
       <PageHeader eyebrow="BCH / Ban Chấp hành" title="Sự kiện của tôi" description="Quản lý brief, phân công và tiến độ sự kiện." />
-      <Button title="Tạo sự kiện" icon="plus" onPress={() => router.push('/bch/event-form')} style={{ alignSelf: 'flex-start' }} />
+      <Button title="Tạo sự kiện" icon="plus" onPress={() => setTab('bch/new')} style={{ alignSelf: 'flex-start' }} />
       <T size={11} color={colors.muted}>
         {user?.fullName} · Ban Chấp hành · {fmtNow()}
       </T>
@@ -119,7 +117,7 @@ export default function BchEventsScreen() {
                 variant="outline"
                 disabled={!e.editable}
                 style={{ flex: 1 }}
-                onPress={() => router.push({ pathname: '/bch/event-form', params: { id: String(e.id) } })}
+                onPress={() => router.push(`/bch/edit/${e.id}`)}
               />
               <Button title="Chi tiết" icon="eye" variant="outline" style={{ flex: 1 }} onPress={() => router.push(`/events/${e.id}`)} />
             </View>

@@ -7,6 +7,8 @@ import { prisma } from '../prisma';
 import { currentUser, requireAuth, requireRole } from '../middleware/auth';
 import { badRequest, parseId } from '../lib/http';
 import { presentUser } from '../services/presenters';
+import { getEmailProvider } from '../email';
+import { welcomeEmail } from '../email/templates';
 import { emailSchema, fullNameSchema, passwordSchema, usernameSchema } from './auth';
 
 export const usersRouter = Router();
@@ -102,11 +104,11 @@ usersRouter.post('/', async (req, res) => {
       mustChangePassword: true, // buộc đổi mật khẩu sau lần đăng nhập đầu
     },
   });
-  if (data.sendEmail) {
-    // Chưa tích hợp dịch vụ email — chỉ ghi log. Xem STUDY.md mục "Mở rộng".
-    console.log(`[email:demo] Gửi thông tin đăng nhập tới ${user.email}`);
-  }
-  res.status(201).json({ user: presentUser(user) });
+  // Gửi email thông tin đăng nhập (Resend khi EMAIL_PROVIDER=resend, còn lại chỉ log)
+  const emailSent = data.sendEmail
+    ? await getEmailProvider().send({ to: user.email, ...welcomeEmail(user.fullName, user.username, data.password, user.role) })
+    : false;
+  res.status(201).json({ user: presentUser(user), emailSent });
 });
 
 const updateSchema = z.object({

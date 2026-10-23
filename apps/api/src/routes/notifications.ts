@@ -4,10 +4,11 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { currentUser, requireAuth, requireRole } from '../middleware/auth';
 import { parseId } from '../lib/http';
-import { addDays, vnDayDiff } from '../lib/time';
-import { config } from '../config';
+import { vnDayDiff } from '../lib/time';
 import { presentTask } from '../services/presenters';
-import { runDailyReminders } from '../services/reminders';
+import { reminderFlag, runDailyDigest } from '../services/digest';
+import { config } from '../config';
+import { sendWebPush, webPushEnabled } from '../push/webpush';
 
 export const notificationsRouter = Router();
 notificationsRouter.use(requireAuth);
@@ -74,41 +75,31 @@ notificationsRouter.get('/reminders', requireRole('BTT'), async (req, res) => {
   const eventId = Number(req.query.eventId) || undefined;
   const now = new Date();
 
+  // Mọi task chưa xong của các sự kiện mình phụ trách (task giao cho cả nhóm)
   const tasks = await prisma.task.findMany({
     where: {
       status: { not: 'COMPLETED' },
       eventId,
       event: { status: 'PUBLISHED', members: { some: { userId: user.id } } },
-      OR: [{ assigneeId: user.id }, { assigneeId: null }],
     },
     include: {
-      assignee: { select: { id: true, fullName: true, role: true } },
       event: { select: { id: true, name: true, startsAt: true, endsAt: true, location: true, photographerQuantity: true } },
     },
     orderBy: { deadline: 'asc' },
   });
 
-  const photo = tasks
-    .filter((t) => t.type === 'PHOTOGRAPHER' && vnDayDiff(now, t.event.startsAt) <= config.photoReminderDaysBefore)
-    .map((t) => ({
-      kind: 'PHOTO' as const,
-      task: presentTask(t, now),
-      event: t.event,
-      daysUntilEvent: vnDayDiff(now, t.event.startsAt),
-    }));
+  // Dùng chung quy tắc với bản tin 09:00 (services/digest.ts) để 2 nơi luôn khớp nhau
+  const flagged = tasks.map((t) => ({ t, flag: reminderFlag(t, t.event, now) }));
 
-  const recap = tasks
-    .filter((t) => t.type === 'RECAP' && vnDayDiff(t.event.endsAt, now) >= 1)
-    .map((t) => ({
-      kind: 'RECAP' as const,
-      task: presentTask(t, now),
-      event: t.event,
-      daysSinceEvent: vnDayDiff(t.event.endsAt, now),
-    }));
+  const photo = flagged
+    .filter((x) => x.flag === 'PHOTO')
+    .map(({ t }) => ({ kind: 'PHOTO' as const, task: presentTask(t, now), event: t.event, daysUntilEvent: vnDayDiff(now, t.event.startsAt) }));
 
-  const deadline = tasks
-    .filter((t) => !['PHOTOGRAPHER', 'RECAP'].includes(t.type) && t.deadline <= addDays(now, 2))
-    .map((t) => presentTask(t, now));
+  const recap = flagged
+    .filter((x) => x.flag === 'RECAP')
+    .map(({ t }) => ({ kind: 'RECAP' as const, task: presentTask(t, now), event: t.event, daysSinceEvent: vnDayDiff(t.event.endsAt, now) }));
+
+  const deadline = flagged.filter((x) => x.flag === 'OVERDUE' || x.flag === 'SOON').map(({ t }) => presentTask(t, now));
 
   res.json({
     photo,
@@ -146,8 +137,58 @@ notificationsRouter.delete('/push-tokens', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------
-// POST /api/admin/run-reminders — Admin chạy job nhắc nhở ngay (để demo)
+// Web Push (web app trên iPhone / trình duyệt)
 // ---------------------------------------------------------------------
-notificationsRouter.post('/admin/run-reminders', requireRole('ADMIN'), async (_req, res) => {
-  res.json(await runDailyReminders());
+/** GET /api/push/web/public-key — khoá công khai VAPID để trình duyệt đăng ký */
+notificationsRouter.get('/push/web/public-key', (_req, res) => {
+  res.json({ enabled: webPushEnabled(), publicKey: config.vapidPublicKey ?? null });
+});
+
+const webSubSchema = z.object({
+  endpoint: z.string().url().max(2000),
+  keys: z.object({ p256dh: z.string().min(10).max(500), auth: z.string().min(4).max(200) }),
+});
+
+/** POST /api/push/web/subscriptions — lưu đăng ký của thiết bị này */
+notificationsRouter.post('/push/web/subscriptions', async (req, res) => {
+  const user = currentUser(req);
+  const { endpoint, keys } = webSubSchema.parse(req.body);
+  const userAgent = String(req.headers['user-agent'] ?? '').slice(0, 300) || null;
+  // Cùng một máy đăng nhập tài khoản khác -> chuyển đăng ký sang người mới
+  await prisma.webPushSubscription.upsert({
+    where: { endpoint },
+    create: { endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent, userId: user.id },
+    update: { p256dh: keys.p256dh, auth: keys.auth, userAgent, userId: user.id },
+  });
+  res.status(204).end();
+});
+
+/** DELETE /api/push/web/subscriptions — tắt thông báo trên thiết bị này (hoặc khi đăng xuất) */
+notificationsRouter.delete('/push/web/subscriptions', async (req, res) => {
+  const user = currentUser(req);
+  const { endpoint } = z.object({ endpoint: z.string() }).parse(req.body);
+  await prisma.webPushSubscription.deleteMany({ where: { endpoint, userId: user.id } });
+  res.status(204).end();
+});
+
+/** POST /api/push/web/test — gửi thử 1 thông báo tới mọi thiết bị của chính mình */
+notificationsRouter.post('/push/web/test', async (req, res) => {
+  const user = currentUser(req);
+  const subs = await prisma.webPushSubscription.findMany({ where: { userId: user.id } });
+  const r = await sendWebPush(subs, {
+    title: 'CSE Task Manage',
+    body: `Xin chào ${user.fullName}! Thông báo trên thiết bị này đã hoạt động 🎉`,
+    url: '/notifications',
+    tag: 'test',
+  });
+  if (r.expired.length) await prisma.webPushSubscription.deleteMany({ where: { endpoint: { in: r.expired } } });
+  res.json({ devices: subs.length, sent: r.sent });
+});
+
+// ---------------------------------------------------------------------
+// POST /api/admin/run-digest — Admin gửi bản tin hằng ngày ngay (để demo).
+// Đã gửi hôm nay thì không gửi lại (DB chặn trùng).
+// ---------------------------------------------------------------------
+notificationsRouter.post('/admin/run-digest', requireRole('ADMIN'), async (_req, res) => {
+  res.json(await runDailyDigest());
 });

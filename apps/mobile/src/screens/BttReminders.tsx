@@ -2,12 +2,14 @@
 import { ReminderCards } from '@/components/shared';
 import { ErrorBox, Loading, PageHeader, Screen } from '@/components/ui';
 import { useRoleAllowed } from '@/lib/auth';
+import { useOnTabActive } from '@/lib/workspace';
 import { useApi } from '@/lib/useApi';
 import type { Reminders } from '@/lib/types';
 
 export default function RemindersScreen() {
   const ok = useRoleAllowed('BTT');
   const { data, error, loading, reload } = useApi<Reminders>(ok ? '/reminders' : null, { pollMs: 60_000 });
+  useOnTabActive(reload); // mở lại tab -> tải lại ngầm
   if (!ok) return <Loading />;
   return (
     <Screen onRefresh={reload}>

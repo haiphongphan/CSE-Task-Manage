@@ -4,10 +4,12 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { EventStatusBadge, ReminderCards, TaskStatusBadge } from '@/components/shared';
-import { Alert, Badge, Button, Card, Chips, Divider, ErrorBox, Icon, Loading, PageHeader, ProgressBar, Screen, Select, StatCard, T } from '@/components/ui';
+import { Select } from '@/components/pickers';
+import { Alert, Badge, Button, Card, Chips, Divider, ErrorBox, Icon, Loading, PageHeader, ProgressBar, Screen, StatCard, T } from '@/components/ui';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApi } from '@/lib/useApi';
+import { openTab } from '@/lib/workspace';
 import { fmtDate, fmtDayTime, fmtRange, PHASE_LABEL, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
 import { colors } from '@/lib/theme';
 import type { Activity, EventDetail, Reminders, Task, TaskStatus } from '@/lib/types';
@@ -41,7 +43,8 @@ export default function EventDetailScreen() {
   const special = e.tasks.filter((t) => t.type === 'PHOTOGRAPHER' || t.type === 'RECAP');
   const done = deliverables.filter((t) => t.status === 'COMPLETED').length;
   const shown = deliverables.filter((t) => (filter === 'all' ? true : filter === 'done' ? t.status === 'COMPLETED' : t.status !== 'COMPLETED'));
-  const myOpen = e.tasks.filter((t) => t.status !== 'COMPLETED' && (!isBtt || !t.assignee || t.assignee.id === user.id));
+  // Task giao cho cả nhóm BTT -> mọi task chưa xong đều là việc của nhóm
+  const myOpen = e.tasks.filter((t) => t.status !== 'COMPLETED');
   const next = myOpen.filter((t) => !t.isOverdue).sort((a, b) => a.deadline.localeCompare(b.deadline))[0];
 
   return (
@@ -51,15 +54,15 @@ export default function EventDetailScreen() {
         title={e.name}
         description={`${fmtDate(e.startsAt)} · ${fmtRange(e.startsAt, e.endsAt)} · ${e.location}`}
       />
-      {isBtt && <Button title={`Nhắc nhở thông minh · ${reminders.data?.total ?? 0}`} variant="outline" icon="bell" onPress={() => router.push('/btt/reminders')} />}
+      {isBtt && <Button title={`Nhắc nhở thông minh · ${reminders.data?.total ?? 0}`} variant="outline" icon="bell" onPress={() => openTab('btt/reminders')} />}
       {e.permissions.canEdit && user.role === 'BCH' && (
-        <Button title="Sửa sự kiện" icon="edit" onPress={() => router.push({ pathname: '/bch/event-form', params: { id: String(e.id) } })} />
+        <Button title="Sửa sự kiện" icon="edit" onPress={() => router.push(`/bch/edit/${e.id}`)} />
       )}
       <Button title="Về danh sách" variant="outline" icon="arrow-left" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} />
       {notice && <Alert tone={notice.tone}>{notice.text}</Alert>}
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
-        <StatCard label={isBtt ? 'Task mở của tôi' : 'Task đang mở'} value={myOpen.length} sub={`${e.progress.overdue} quá hạn`} />
+        <StatCard label={isBtt ? 'Task nhóm còn mở' : 'Task đang mở'} value={myOpen.length} sub={`${e.progress.overdue} quá hạn`} />
         <StatCard label="Hạn tiếp theo" value={next ? timeLeft(next.deadline).text.replace('còn ', '') : '–'} sub={next?.title} />
       </View>
 
@@ -156,10 +159,10 @@ function TaskItem({ task: t, event, onChanged, setNotice }: { task: Task; event:
     <View style={{ borderWidth: 1, borderColor: colors.divider, borderRadius: 10, padding: 12, gap: 6 }}>
       <T size={15}>{t.title}</T>
       <T size={11} color={colors.muted}>
-        {t.dimensions ?? 'Không yêu cầu kích thước'} · {t.assignee?.fullName ?? 'Cả nhóm phụ trách'}
+        {t.dimensions ?? 'Không yêu cầu kích thước'}
       </T>
       <T size={12} color={colors.primary}>
-        {t.status === 'COMPLETED' && t.completedAt ? `Đã nộp ${fmtDayTime(t.completedAt)}` : left.text}
+        {t.status === 'COMPLETED' && t.completedAt ? `Đã nộp ${fmtDayTime(t.completedAt)}${t.completedBy ? ` · ${t.completedBy.fullName}` : ''}` : left.text}
       </T>
       <T size={11} color={colors.muted}>
         Hạn {fmtDayTime(t.deadline)}
@@ -190,6 +193,7 @@ function TaskActions({ task: t, event, onChanged, setNotice }: { task: Task; eve
         <View style={{ minWidth: 150 }}>
           <Select
             compact
+            title={`Trạng thái · ${t.title}`}
             value={t.status}
             disabled={busy}
             options={STATUS_OPTIONS}

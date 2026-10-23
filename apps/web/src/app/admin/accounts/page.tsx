@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { CheckCircle2, Mail, PenSquare, Plus, Search, ShieldCheck, Users, UserCog } from 'lucide-react';
 import { Alert, Avatar, Badge, Button, ErrorBox, Field, Loading, Modal, PageHeader, StatCard, cx } from '@/components/ui';
 import { PasswordInput } from '@/components/AuthLayout';
+import { Dropdown } from '@/components/pickers';
 import { api, qs, type ApiError } from '@/lib/api';
 import { useApi, useDebounced } from '@/lib/useApi';
 import { fmtDate, ROLE_DESC } from '@/lib/format';
@@ -70,19 +71,20 @@ export default function AccountsPage() {
               }}
             />
           </div>
-          <select
-            className="input !bg-white sm:w-44"
+          <Dropdown
+            className="sm:w-48"
             value={role}
-            onChange={(e) => {
-              setRole(e.target.value as Role | '');
+            onChange={(v) => {
+              setRole(v);
               setPage(1);
             }}
-          >
-            <option value="">Tất cả vai trò</option>
-            <option value="ADMIN">Admin</option>
-            <option value="BCH">BCH</option>
-            <option value="BTT">BTT</option>
-          </select>
+            options={[
+              { value: '' as const, label: 'Tất cả vai trò' },
+              { value: 'ADMIN' as const, label: 'Admin', hint: 'Quản trị viên' },
+              { value: 'BCH' as const, label: 'BCH', hint: 'Ban Chấp hành' },
+              { value: 'BTT' as const, label: 'BTT', hint: 'Ban Truyền thông' },
+            ]}
+          />
         </div>
 
         {error ? (
@@ -205,8 +207,8 @@ function AccountModal({ user, onClose, onSaved }: { user: User | null; onClose: 
     setErrors({});
     try {
       if (isNew) {
-        await api('/users', { method: 'POST', body: form });
-        onSaved(`Đã tạo tài khoản ${form.fullName}.`);
+        const r = await api<{ emailSent: boolean }>('/users', { method: 'POST', body: form });
+        onSaved(`Đã tạo tài khoản ${form.fullName}.${form.sendEmail ? (r.emailSent ? ' Đã gửi email thông tin đăng nhập.' : ' Chưa gửi được email (kiểm tra cấu hình Resend).') : ''}`);
       } else {
         const { sendEmail: _ignored, password, ...rest } = form;
         await api(`/users/${user.id}`, { method: 'PATCH', body: { ...rest, ...(password && { password }) } });

@@ -19,12 +19,11 @@ const statusEnum = z.enum(['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'COMPLETED']);
 
 // =====================================================================
 // GET /api/tasks — ADMIN: bảng "Tất cả task" + thống kê + tổng quan sự kiện
-// ?search= &status=TODO|...|OVERDUE &team=BCH|BTT &sort=deadline_asc|deadline_desc &page=
+// ?search= &status=TODO|...|OVERDUE &eventId= &sort=deadline_asc|deadline_desc &page=
 // =====================================================================
 const listQuery = z.object({
   search: z.string().trim().optional(),
   status: z.enum(['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'COMPLETED', 'OVERDUE']).optional(),
-  team: z.enum(['BCH', 'BTT']).optional(),
   eventId: z.coerce.number().int().positive().optional(),
   sort: z.enum(['deadline_asc', 'deadline_desc']).default('deadline_asc'),
   page: z.coerce.number().int().min(1).default(1),
@@ -35,7 +34,6 @@ function buildTaskWhere(q: z.infer<typeof listQuery>, now: Date): Prisma.TaskWhe
   return {
     event: { status: { not: 'DRAFT' } },
     ...(q.eventId && { eventId: q.eventId }),
-    ...(q.team && { assignee: { role: q.team } }),
     ...(q.status === 'OVERDUE'
       ? { status: { not: 'COMPLETED' }, deadline: { lt: now } }
       : q.status && { status: q.status }),
@@ -58,7 +56,7 @@ tasksRouter.get('/', requireRole('ADMIN'), async (req, res) => {
   const [items, total, allActive, events] = await Promise.all([
     prisma.task.findMany({
       where,
-      include: { assignee: miniUser, event: { select: { id: true, name: true } } },
+      include: { completedBy: miniUser, event: { select: { id: true, name: true, members: { select: { user: miniUser } } } } },
       // Task chưa xong (completedAt = NULL) lên trước, sau đó theo hạn chót
       orderBy: [
         { completedAt: { sort: 'desc', nulls: 'first' } },
@@ -107,11 +105,11 @@ tasksRouter.get('/', requireRole('ADMIN'), async (req, res) => {
 tasksRouter.get('/export.csv', requireRole('ADMIN'), async (_req, res) => {
   const tasks = await prisma.task.findMany({
     where: { event: { status: { not: 'DRAFT' } } },
-    include: { assignee: miniUser, event: { select: { name: true } } },
+    include: { event: { select: { name: true, members: { select: { user: { select: { fullName: true } } } } } } },
     orderBy: [{ eventId: 'asc' }, { deadline: 'asc' }],
   });
   const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const header = ['Mã', 'Sự kiện', 'Task', 'Loại', 'Kích thước', 'Người nhận', 'Hạn chót', 'Trạng thái', 'Tiến độ (%)'];
+  const header = ['Mã', 'Sự kiện', 'Task', 'Loại', 'Kích thước', 'BTT phụ trách', 'Hạn chót', 'Trạng thái', 'Tiến độ (%)'];
   const rows = tasks.map((t) =>
     [
       t.code,
@@ -119,7 +117,7 @@ tasksRouter.get('/export.csv', requireRole('ADMIN'), async (_req, res) => {
       t.title,
       TASK_TYPE_LABEL[t.type],
       t.dimensions,
-      t.assignee?.fullName,
+      t.event.members.map((m) => m.user.fullName).join(', '),
       formatVn(t.deadline),
       TASK_STATUS_LABEL[t.status],
       t.progress,
@@ -141,7 +139,6 @@ tasksRouter.get('/export.csv', requireRole('ADMIN'), async (_req, res) => {
 const patchSchema = z.object({
   title: z.string().trim().min(1).max(150).optional(),
   dimensions: z.string().trim().max(100).nullable().optional(),
-  assigneeId: z.number().int().positive().nullable().optional(),
   deadline: z.coerce.date().optional(),
   status: statusEnum.optional(),
   progress: z.number().int().min(0).max(100).optional(),
@@ -167,23 +164,16 @@ tasksRouter.patch('/:id', requireRole('ADMIN', 'BTT'), async (req, res) => {
     if (extra.length) throw forbidden('BTT chỉ được cập nhật trạng thái và tiến độ');
   }
 
-  if (data.assigneeId) {
-    const assignee = await prisma.user.findUnique({ where: { id: data.assigneeId } });
-    if (!assignee) throw badRequest('Người nhận không tồn tại');
-    // Nếu giao cho BTT chưa thuộc sự kiện thì tự thêm vào nhóm phụ trách
-    if (assignee.role === 'BTT' && !task.event.members.some((m) => m.userId === assignee.id)) {
-      await prisma.eventMember.create({ data: { eventId: task.eventId, userId: assignee.id } });
-    }
-  }
-
   // Quy tắc nhất quán: hoàn thành <=> progress 100 + completedAt
   const nextStatus = data.status ?? task.status;
   const update: Prisma.TaskUncheckedUpdateInput = { ...data };
   if (nextStatus === 'COMPLETED') {
     update.progress = 100;
     update.completedAt = task.completedAt ?? new Date();
+    update.completedById = task.completedById ?? user.id;
   } else {
     update.completedAt = null;
+    update.completedById = null;
     if (task.status === 'COMPLETED' && data.progress === undefined) update.progress = 90;
   }
 
@@ -191,7 +181,7 @@ tasksRouter.patch('/:id', requireRole('ADMIN', 'BTT'), async (req, res) => {
     const t = await tx.task.update({
       where: { id },
       data: update,
-      include: { assignee: miniUser, event: { select: { id: true, name: true } } },
+      include: { completedBy: miniUser, event: { select: { id: true, name: true, members: { select: { user: miniUser } } } } },
     });
     await syncEventCompletion(tx, task.eventId);
 
@@ -209,9 +199,10 @@ tasksRouter.patch('/:id', requireRole('ADMIN', 'BTT'), async (req, res) => {
   });
 
   // Thông báo
-  if (user.role === 'ADMIN' && updated.assigneeId) {
+  // Admin sửa task -> báo cho cả nhóm BTT phụ trách sự kiện
+  if (user.role === 'ADMIN') {
     await notify({
-      recipientIds: [updated.assigneeId],
+      recipientIds: task.event.members.map((m) => m.userId),
       type: 'TASK_UPDATED',
       title: `Task được cập nhật: ${updated.title}`,
       body: `Admin đã cập nhật "${updated.title}" (${task.event.name}). Hạn chót: ${formatVn(updated.deadline)}.`,
@@ -252,8 +243,9 @@ tasksRouter.post('/:id/remind', requireRole('BCH', 'ADMIN'), async (req, res) =>
   if (task.event.status === 'DRAFT') throw badRequest('Hãy gửi sự kiện cho BTT trước khi nhắc việc');
   if (task.status === 'COMPLETED') throw badRequest('Task này đã hoàn thành');
 
-  const recipients = task.assigneeId ? [task.assigneeId] : task.event.members.map((m) => m.userId);
-  if (recipients.length === 0) throw badRequest('Task chưa có người nhận');
+  // Task giao cho cả nhóm -> nhắc mọi BTT phụ trách sự kiện
+  const recipients = task.event.members.map((m) => m.userId);
+  if (recipients.length === 0) throw badRequest('Sự kiện chưa có BTT phụ trách');
 
   const sent = await notify({
     recipientIds: recipients,
@@ -261,7 +253,7 @@ tasksRouter.post('/:id/remind', requireRole('BCH', 'ADMIN'), async (req, res) =>
     title: `Nhắc việc: ${task.title}`,
     body:
       message ||
-      `${user.fullName} nhắc bạn hoàn thành "${task.title}" của ${task.event.name} trước ${formatVn(task.deadline)}.`,
+      `${user.fullName} nhắc nhóm hoàn thành "${task.title}" của ${task.event.name} trước ${formatVn(task.deadline)}.`,
     eventId: task.eventId,
     taskId: task.id,
     sentById: user.id,

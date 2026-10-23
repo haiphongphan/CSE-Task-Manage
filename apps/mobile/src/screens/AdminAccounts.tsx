@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Alert, Avatar, Badge, Button, Card, Chips, Divider, ErrorBox, Field, Icon, Input, Loading, PageHeader, Screen, StatCard, T } from '@/components/ui';
 import { api, qs, type ApiError } from '@/lib/api';
 import { useAuth, useRoleAllowed } from '@/lib/auth';
+import { useOnTabActive } from '@/lib/workspace';
 import { useApi, useDebounced } from '@/lib/useApi';
 import { fmtDate } from '@/lib/format';
 import { colors } from '@/lib/theme';
@@ -25,6 +26,7 @@ export default function AccountsScreen() {
   const [page, setPage] = useState(1);
   const q = useDebounced(search);
   const { data, error, loading, reload } = useApi<Resp>(ok ? `/users${qs({ search: q, role, page, pageSize: 8 })}` : null);
+  useOnTabActive(reload); // mở lại tab -> tải lại ngầm
   const [editing, setEditing] = useState<User | 'new' | null>(null);
   const [flash, setFlash] = useState('');
   if (!ok) return <Loading />;

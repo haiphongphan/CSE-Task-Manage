@@ -47,7 +47,7 @@ export function ReminderCards({ data, onChanged }: { data: Reminders | null; onC
       )}
       <p className="flex items-start gap-2 text-[11px] text-muted">
         <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
-        Nhắc nhở tự động theo ngày sự kiện và hạn chót. Thông báo được gửi mỗi ngày lúc 08:00 cho tới khi task hoàn thành.
+        Thẻ nhắc nhở cập nhật theo thời gian thực. Mỗi ngày lúc 09:00 bạn nhận một bản tin gộp mọi task còn lại qua điện thoại và email.
       </p>
     </div>
   );
@@ -81,7 +81,7 @@ function DeadlineCard({ tasks }: { tasks: Reminders['deadline'] }) {
               <Badge tone={left.overdue ? 'navy' : 'ice'}>{left.text}</Badge>
             </div>
             <p className="mt-1 text-[11px] text-muted">
-              {t.event?.name} · {fmtDayTime(t.deadline)} · {t.assignee?.fullName ?? 'Cả nhóm'}
+              {t.event?.name} · {fmtDayTime(t.deadline)}
             </p>
           </div>
         );
@@ -139,14 +139,14 @@ function PhotoCard({ r, onDone }: { r: Reminders['photo'][number]; onDone: () =>
       <div className="rounded-lg bg-white/10 p-3">
         <p className="text-[10px] uppercase text-sky">Trạng thái phân công</p>
         <p className="mt-1 text-[13px]">
-          Cần {r.event.photographerQuantity} người · Phụ trách: {r.task.assignee?.fullName ?? 'cả nhóm'}
+          Cần {r.event.photographerQuantity} người chụp · Cả nhóm BTT phụ trách
         </p>
       </div>
       <Button onClick={complete} loading={loading} icon={<CheckCircle2 className="size-4" />} className="!border-sky/40">
         Đánh dấu hoàn thành
       </Button>
       {error && <p className="text-xs text-red-200">{error}</p>}
-      <p className="text-[11px] text-white/80">Gửi mỗi ngày từ 3 ngày trước sự kiện. Đánh dấu hoàn thành sau khi xác nhận người chụp để dừng nhắc.</p>
+      <p className="text-[11px] text-white/80">Có trong bản tin hằng ngày từ 3 ngày trước sự kiện. Đánh dấu hoàn thành sau khi xác nhận người chụp để dừng nhắc.</p>
     </div>
   );
 }
@@ -169,7 +169,6 @@ function RecapCard({ r, onDone }: { r: Reminders['recap'][number]; onDone: () =>
       <div className="flex items-center gap-2 rounded-lg bg-ice p-3 text-xs text-navy">
         <Clock className="size-4 text-primary" /> Hạn {fmtDayTime(r.task.deadline)} · {left.overdue ? 'Quá hạn' : left.text}
       </div>
-      <p className="text-[11px] text-muted">Phụ trách: {r.task.assignee ? `${r.task.assignee.fullName} · BTT` : 'Cả nhóm BTT'}</p>
       <Button onClick={complete} loading={loading}>
         Đã đăng recap / Hoàn thành
       </Button>

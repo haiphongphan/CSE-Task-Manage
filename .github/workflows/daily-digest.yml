@@ -1,0 +1,23 @@
+# Gọi API gửi bản tin hằng ngày lúc 09:00 giờ Việt Nam (= 02:00 UTC).
+# Cần vì Render gói Free cho server "ngủ" khi không có truy cập -> cron bên trong API có thể lỡ giờ.
+# Cài đặt: GitHub repo -> Settings -> Secrets and variables -> Actions -> New repository secret
+#   API_URL     = https://<tên-api>.onrender.com/api
+#   CRON_SECRET = giống biến CRON_SECRET trên Render
+# Lưu ý: GitHub có thể chạy trễ vài phút so với lịch.
+name: Daily digest 09:00 (VN)
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch: {} # cho phép bấm "Run workflow" để thử ngay
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Đánh thức API (Render Free mất ~1 phút để khởi động)
+        run: curl -fsS --retry 6 --retry-delay 20 --retry-all-errors "${{ secrets.API_URL }}/health"
+      - name: Gửi bản tin
+        run: |
+          curl -fsS -X POST "${{ secrets.API_URL }}/cron/daily-digest" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}"

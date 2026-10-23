@@ -24,6 +24,7 @@ import {
 import { Alert, Avatar, Badge, Button, Chips, ErrorBox, Loading, PageHeader, ProgressBar, StatCard, cx } from '@/components/ui';
 import { EventStatusBadge, TaskStatusBadge } from '@/components/status';
 import { ReminderCards } from '@/components/ReminderCards';
+import { Dropdown } from '@/components/pickers';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useAuth } from '@/lib/auth';
@@ -56,7 +57,8 @@ export default function EventDetailPage() {
     void reminders.reload();
   };
 
-  const myOpen = e.tasks.filter((t) => t.status !== 'COMPLETED' && (!isBtt || !t.assignee || t.assignee.id === user.id));
+  // Task giao cho cả nhóm BTT -> mọi task chưa xong đều là việc của nhóm
+  const myOpen = e.tasks.filter((t) => t.status !== 'COMPLETED');
   const next = myOpen.filter((t) => !t.isOverdue).sort((a, b) => a.deadline.localeCompare(b.deadline))[0];
   const deliverables = e.tasks.filter((t) => t.type !== 'PHOTOGRAPHER' && t.type !== 'RECAP');
   const special = e.tasks.filter((t) => t.type === 'PHOTOGRAPHER' || t.type === 'RECAP');
@@ -104,7 +106,7 @@ export default function EventDetailPage() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard
-          label={isBtt ? 'Task đang mở của tôi' : 'Task đang mở'}
+          label={isBtt ? 'Task nhóm còn mở' : 'Task đang mở'}
           value={myOpen.length}
           sub={`${e.progress.overdue} quá hạn`}
           icon={<ListChecks className="size-[18px]" />}
@@ -242,24 +244,23 @@ export default function EventDetailPage() {
             <div className="card flex flex-col gap-3 p-5">
               <h2 className="text-lg text-navy">BTT phụ trách</h2>
               {e.members.length === 0 && <p className="text-sm text-muted">Chưa phân công (bản nháp).</p>}
-              {e.members.map((m) => {
-                const mine = e.tasks.filter((t) => t.assignee?.id === m.id);
-                const done = mine.filter((t) => t.status === 'COMPLETED').length;
-                return (
-                  <div key={m.id} className="flex items-center gap-3">
-                    <Avatar name={m.fullName} size={30} />
-                    <div className="flex-1">
-                      <p className="text-[13px] text-navy">{m.fullName}</p>
-                      <p className="text-[11px] text-muted">
-                        {done}/{mine.length} task đã giao hoàn thành
-                      </p>
-                    </div>
+              {e.members.map((m) => (
+                <div key={m.id} className="flex items-center gap-3">
+                  <Avatar name={m.fullName} size={30} />
+                  <div className="flex-1">
+                    <p className="text-[13px] text-navy">{m.fullName}</p>
+                    <p className="text-[11px] text-muted">Ban Truyền thông · cùng phụ trách mọi task</p>
                   </div>
-                );
-              })}
+                </div>
+              ))}
+              {e.members.length > 0 && (
+                <p className="text-xs text-navy">
+                  Nhóm đã hoàn thành {e.progress.completed}/{e.progress.total} task
+                </p>
+              )}
               <div className="h-px bg-divider" />
               <p className="text-[11px] text-muted">
-                Hệ thống tự nhắc BTT mỗi ngày: chụp ảnh từ 3 ngày trước sự kiện, recap từ hôm sau sự kiện. Bạn có thể bấm “Nhắc” ở từng task để gửi nhắc ngay.
+                09:00 mỗi ngày, mỗi BTT nhận một bản tin gộp mọi task còn lại (điện thoại + email): chụp ảnh từ 3 ngày trước sự kiện, recap từ hôm sau sự kiện. Bấm “Nhắc” ở từng task để nhắc cả nhóm ngay.
               </p>
             </div>
           )}
@@ -278,10 +279,9 @@ function TaskRow({ task: t, event, onChanged, setNotice }: { task: Task; event: 
       <div>
         <p className="text-[15px] text-navy">{t.title}</p>
         <p className="text-[11px] text-muted">{t.dimensions ?? 'Không yêu cầu kích thước'}</p>
-        <p className="text-[11px] text-muted">{t.assignee?.fullName ?? 'Cả nhóm phụ trách'}</p>
       </div>
       <div className="text-xs">
-        <p className="text-primary">{t.status === 'COMPLETED' && t.completedAt ? `Đã nộp ${fmtDayTime(t.completedAt)}` : left.text}</p>
+        <p className="text-primary">{t.status === 'COMPLETED' && t.completedAt ? `Đã nộp ${fmtDayTime(t.completedAt)}${t.completedBy ? ` · ${t.completedBy.fullName}` : ''}` : left.text}</p>
         <p className="mt-1 text-[11px] text-muted">Hạn {fmtDayTime(t.deadline)}</p>
       </div>
       <div className="flex flex-col gap-2">
@@ -325,19 +325,17 @@ function TaskActions({ task: t, event, onChanged, setNotice }: { task: Task; eve
   return (
     <div className="flex flex-wrap items-center gap-2">
       {event.permissions.canUpdateTasks ? (
-        <select
-          className="input !min-h-[32px] !w-auto !rounded-full !py-1 !text-xs"
+        <Dropdown
+          size="sm"
+          pill
+          className="w-[140px]"
+          width={180}
+          label={`Trạng thái ${t.title}`}
           value={t.status}
           disabled={busy}
-          onChange={(e) => changeStatus(e.target.value as TaskStatus)}
-          aria-label={`Trạng thái ${t.title}`}
-        >
-          {(Object.keys(TASK_STATUS_LABEL) as TaskStatus[]).map((s) => (
-            <option key={s} value={s}>
-              {TASK_STATUS_LABEL[s]}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => v !== t.status && changeStatus(v)}
+          options={(Object.keys(TASK_STATUS_LABEL) as TaskStatus[]).map((s) => ({ value: s, label: TASK_STATUS_LABEL[s] }))}
+        />
       ) : (
         <TaskStatusBadge task={t} />
       )}

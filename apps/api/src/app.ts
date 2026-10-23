@@ -8,6 +8,7 @@ import { usersRouter } from './routes/users';
 import { eventsRouter } from './routes/events';
 import { tasksRouter } from './routes/tasks';
 import { notificationsRouter } from './routes/notifications';
+import { cronRouter } from './routes/cron';
 import { errorHandler, notFoundHandler } from './middleware/error';
 
 export function createApp() {
@@ -25,6 +26,7 @@ export function createApp() {
   app.use('/api/users', usersRouter);
   app.use('/api/events', eventsRouter);
   app.use('/api/tasks', tasksRouter);
+  app.use('/api/cron', cronRouter); // đặt TRƯỚC notificationsRouter (router đó yêu cầu đăng nhập)
   app.use('/api', notificationsRouter);
 
   app.use(notFoundHandler);

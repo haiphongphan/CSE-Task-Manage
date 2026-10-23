@@ -5,15 +5,14 @@ import { Alert, Button, Card, ErrorBox, Icon, Loading, PageHeader, Screen, T } f
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApi } from '@/lib/useApi';
+import { openTab } from '@/lib/workspace';
 import { fmtDayTime } from '@/lib/format';
 import { colors } from '@/lib/theme';
 import type { AppNotification } from '@/lib/types';
 
 const TYPE_LABEL: Record<string, string> = {
+  DAILY_DIGEST: 'Bản tin 09:00',
   MANUAL_REMIND: 'Nhắc việc từ BCH',
-  PHOTO_REMINDER: 'Nhắc chụp ảnh',
-  RECAP_REMINDER: 'Nhắc recap',
-  DEADLINE_ALERT: 'Sắp tới hạn',
   EVENT_ASSIGNED: 'Phân công mới',
   TASK_UPDATED: 'Cập nhật',
 };
@@ -59,6 +58,7 @@ export default function NotificationsScreen() {
               onPress={async () => {
                 if (!n.isRead) await api(`/notifications/${n.id}/read`, { method: 'POST' }).catch(() => {});
                 if (n.eventId) router.push(`/events/${n.eventId}`);
+                else if (n.type === 'DAILY_DIGEST') openTab('btt/reminders');
                 else void reload();
               }}
               style={{ flexDirection: 'row', gap: 12, padding: 16, borderBottomWidth: 1, borderColor: colors.divider, backgroundColor: n.isRead ? colors.white : colors.soft }}

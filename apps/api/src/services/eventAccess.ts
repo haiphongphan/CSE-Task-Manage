@@ -10,7 +10,7 @@ const miniUser = { select: { id: true, fullName: true, role: true } } as const;
 export const eventDetailInclude = {
   createdBy: miniUser,
   members: { include: { user: miniUser }, orderBy: { addedAt: 'asc' } },
-  tasks: { include: { assignee: miniUser }, orderBy: [{ deadline: 'asc' }, { id: 'asc' }] },
+  tasks: { include: { completedBy: miniUser }, orderBy: [{ deadline: 'asc' }, { id: 'asc' }] },
 } satisfies Prisma.EventInclude;
 
 /** Điều kiện WHERE: những sự kiện user này được XEM */

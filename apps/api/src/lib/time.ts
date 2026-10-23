@@ -29,3 +29,8 @@ export function formatVn(d: Date): string {
   const s = new Date(d.getTime() + VN_OFFSET_MS).toISOString();
   return `${s.slice(8, 10)}/${s.slice(5, 7)} · ${s.slice(11, 16)}`;
 }
+
+/** Giờ hiện tại theo giờ VN (0–23) */
+export function vnHour(d: Date): number {
+  return new Date(d.getTime() + VN_OFFSET_MS).getUTCHours();
+}

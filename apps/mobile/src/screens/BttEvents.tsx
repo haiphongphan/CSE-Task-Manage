@@ -5,6 +5,7 @@ import { View } from 'react-native';
 import { Button, Card, Chips, ErrorBox, Icon, Input, Loading, PageHeader, ProgressBar, Screen, StatCard, T } from '@/components/ui';
 import { qs } from '@/lib/api';
 import { useAuth, useRoleAllowed } from '@/lib/auth';
+import { setTab, useOnTabActive } from '@/lib/workspace';
 import { useApi, useDebounced } from '@/lib/useApi';
 import { fmtDate, fmtDayTime, fmtNow, fmtRange, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
 import { colors } from '@/lib/theme';
@@ -23,6 +24,7 @@ export default function BttEventsScreen() {
   const q = useDebounced(search);
   const { data, error, loading, reload } = useApi<Resp>(ok ? `/events${qs({ phase, search: q })}` : null);
   const reminders = useApi<Reminders>(ok ? '/reminders' : null);
+  useOnTabActive(() => (reload(), reminders.reload())); // mở lại tab -> tải lại ngầm
   if (!ok) return <Loading />;
   const s = data?.stats;
 
@@ -33,7 +35,7 @@ export default function BttEventsScreen() {
         title="Sự kiện đang hoạt động"
         description="Các brief được giao cho đội. Ưu tiên rõ ràng, từ chuẩn bị tới recap."
       />
-      <Button title={`Nhắc nhở thông minh · ${reminders.data?.total ?? 0}`} icon="bell" variant="outline" onPress={() => router.push('/btt/reminders')} />
+      <Button title={`Nhắc nhở thông minh · ${reminders.data?.total ?? 0}`} icon="bell" variant="outline" onPress={() => setTab('btt/reminders')} />
       <T size={11} color={colors.muted}>
         {user?.fullName} · Ban Truyền thông · {fmtNow()}
       </T>

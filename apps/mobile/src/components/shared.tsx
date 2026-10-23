@@ -96,7 +96,7 @@ export function ReminderCards({ data, onChanged }: { data: Reminders | null; onC
         </Card>
       )}
       <T size={11} color={colors.muted}>
-        Nhắc nhở tự động gửi mỗi ngày lúc 08:00 cho tới khi task hoàn thành.
+        Mỗi ngày lúc 09:00 bạn nhận một bản tin gộp mọi task còn lại qua điện thoại và email.
       </T>
     </View>
   );
@@ -127,7 +127,7 @@ function PhotoCard({ r, onDone }: { r: Reminders['photo'][number]; onDone: () =>
           Trạng thái phân công
         </T>
         <T color={colors.white}>
-          Cần {r.event.photographerQuantity} người · Phụ trách: {r.task.assignee?.fullName ?? 'cả nhóm'}
+          Cần {r.event.photographerQuantity} người chụp · Cả nhóm BTT phụ trách
         </T>
       </View>
       <Button title="Đánh dấu hoàn thành" icon="check-circle" onPress={complete} loading={loading} />
@@ -137,7 +137,7 @@ function PhotoCard({ r, onDone }: { r: Reminders['photo'][number]; onDone: () =>
         </T>
       ) : null}
       <T size={11} color="rgba(255,255,255,0.8)">
-        Gửi mỗi ngày từ 3 ngày trước sự kiện. Đánh dấu hoàn thành để dừng nhắc.
+        Có trong bản tin hằng ngày từ 3 ngày trước sự kiện. Đánh dấu hoàn thành để dừng nhắc.
       </T>
     </Card>
   );
@@ -164,7 +164,7 @@ function RecapCard({ r, onDone }: { r: Reminders['recap'][number]; onDone: () =>
         </T>
       </View>
       <T size={11} color={colors.muted}>
-        Phụ trách: {r.task.assignee?.fullName ?? 'Cả nhóm BTT'}
+        Cả nhóm BTT của sự kiện cùng phụ trách
       </T>
       <Button title="Đã đăng recap / Hoàn thành" onPress={complete} loading={loading} />
       {error ? (

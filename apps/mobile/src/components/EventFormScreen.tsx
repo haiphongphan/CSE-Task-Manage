@@ -1,10 +1,11 @@
-// BCH · Tạo / sửa sự kiện (Figma: "BCH event and task creation · Mobile")
-// ?id=<số> => chế độ sửa. Gồm mục 01–04 theo Figma + 05 "Phân công Ban Truyền thông".
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+// BCH · Form tạo / sửa sự kiện (Figma: "BCH event and task creation · Mobile")
+// BTT phụ trách được chọn ngay trong mục 01; mọi task giao cho cả nhóm, không giao riêng từng người.
+import { openTab } from '@/lib/workspace';
+import { router } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { DateTimeField } from '@/components/DateTimeField';
-import { Alert, Avatar, Badge, Button, Card, ErrorBox, Field, Icon, Input, Loading, PageHeader, Screen, Select, T, Toggle } from '@/components/ui';
+import { DateField, MemberPicker, TimeField, formatYmd } from './pickers';
+import { Alert, Badge, Button, Card, ErrorBox, Field, Icon, Input, Loading, PageHeader, Screen, T, Toggle } from './ui';
 import { api, type ApiError } from '@/lib/api';
 import { useRoleAllowed } from '@/lib/auth';
 import { setFlash } from '@/lib/flash';
@@ -23,7 +24,6 @@ interface DState {
   dimensions: string;
   date: string;
   time: string;
-  assigneeId: number | '';
 }
 
 const dayBefore = (date: string) => {
@@ -33,9 +33,9 @@ const dayBefore = (date: string) => {
   return d.toISOString().slice(0, 10);
 };
 
-export default function EventFormScreen() {
+/** id có giá trị = sửa sự kiện; không có = tạo mới. onSaved: báo cho tab "Tạo sự kiện" để làm trống form */
+export function EventFormScreen({ id, onSaved }: { id?: string; onSaved?: () => void }) {
   const ok = useRoleAllowed('BCH');
-  const { id } = useLocalSearchParams<{ id?: string }>();
   const existing = useApi<{ event: EventDetail }>(ok && id ? `/events/${id}` : null);
   if (!ok) return <Loading />;
   if (id) {
@@ -50,16 +50,14 @@ export default function EventFormScreen() {
     }
     return <EventForm key={id} event={existing.data.event} />;
   }
-  return <EventForm />;
+  return <EventForm onSaved={onSaved} />;
 }
 
-function EventForm({ event }: { event?: EventDetail }) {
+function EventForm({ event, onSaved }: { event?: EventDetail; onSaved?: () => void }) {
   const isEdit = !!event;
   const isDraft = !event || event.status === 'DRAFT';
   const { data: bttData } = useApi<{ items: (MiniUser & { username: string })[] }>('/users/options?role=BTT');
   const btts = bttData?.items ?? [];
-  const photoTask = event?.tasks.find((t) => t.type === 'PHOTOGRAPHER');
-  const recapTask = event?.tasks.find((t) => t.type === 'RECAP');
 
   const [info, setInfo] = useState({
     name: event?.name ?? '',
@@ -82,43 +80,25 @@ function EventForm({ event }: { event?: EventDetail }) {
           dimensions: t.dimensions ?? '',
           date: toDateInput(t.deadline),
           time: toTimeInput(t.deadline),
-          assigneeId: t.assignee?.id ?? '',
         };
       });
     return map;
   });
-  const [photo, setPhoto] = useState({
-    needed: event?.photographerNeeded ?? true,
-    quantity: event?.photographerQuantity || 1,
-    assigneeId: (photoTask?.assignee?.id ?? '') as number | '',
-  });
+  const [photo, setPhoto] = useState({ needed: event?.photographerNeeded ?? true, quantity: event?.photographerQuantity || 1 });
   const [memberIds, setMemberIds] = useState<number[]>(event?.members.map((m) => m.id) ?? []);
-  const [recapAssigneeId, setRecapAssigneeId] = useState<number | ''>(recapTask?.assignee?.id ?? '');
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState<'draft' | 'publish' | null>(null);
 
   const selected = DELIVERABLES.filter((t) => items[t]);
-  const members = btts.filter((u) => memberIds.includes(u.id));
-  const assigneeOptions = useMemo(
-    () => [{ value: '' as const, label: '— Cả nhóm phụ trách —' }, ...members.map((m) => ({ value: m.id, label: m.fullName }))],
-    [members],
-  );
   const taskCount = selected.length + (photo.needed ? 1 : 0) + 1;
-
-  // Bỏ chọn BTT -> gỡ người đó khỏi các task
-  useEffect(() => {
-    const keep = (v: number | '') => (v !== '' && !memberIds.includes(v) ? '' : v);
-    setItems((cur) => Object.fromEntries(Object.entries(cur).map(([k, v]) => [k, v && { ...v, assigneeId: keep(v.assigneeId) }])));
-    setPhoto((p) => ({ ...p, assigneeId: keep(p.assigneeId) }));
-    setRecapAssigneeId((v) => keep(v));
-  }, [memberIds]);
+  const today = toDateInput(new Date().toISOString());
 
   const setI = (k: keyof typeof info) => (v: string) => setInfo({ ...info, [k]: v });
   const toggleItem = (t: DType) =>
     setItems((cur) => {
       const next = { ...cur };
       if (next[t]) delete next[t];
-      else next[t] = { title: '', dimensions: '', date: dayBefore(info.date), time: '17:00', assigneeId: '' };
+      else next[t] = { title: '', dimensions: '', date: dayBefore(info.date), time: '17:00' };
       return next;
     });
   const updateItem = (t: DType, patch: Partial<DState>) => setItems((cur) => ({ ...cur, [t]: { ...cur[t]!, ...patch } }));
@@ -127,15 +107,15 @@ function EventForm({ event }: { event?: EventDetail }) {
     const errs: string[] = [];
     if (info.name.trim().length < 3) errs.push('Tên sự kiện tối thiểu 3 ký tự');
     if (!info.location.trim()) errs.push('Vui lòng nhập địa điểm');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(info.date)) errs.push('Vui lòng chọn ngày sự kiện');
+    if (!info.date) errs.push('Vui lòng chọn ngày sự kiện');
     if (info.endTime <= info.startTime) errs.push('Giờ kết thúc phải sau giờ bắt đầu');
+    if (publish && memberIds.length === 0) errs.push('Chọn ít nhất 1 thành viên BTT phụ trách (mục 01)');
     for (const t of selected) {
       const d = items[t]!;
       if (DIM_REQUIRED.includes(t) && !d.dimensions.trim()) errs.push(`${TASK_TYPE_LABEL[t]}: cần nhập kích thước`);
       if (t === 'OTHER' && !d.title.trim()) errs.push('Ấn phẩm “Khác”: cần nhập loại ấn phẩm');
       if (!d.date || !d.time) errs.push(`${TASK_TYPE_LABEL[t]}: cần chọn hạn chót`);
     }
-    if (publish && memberIds.length === 0) errs.push('Chọn ít nhất 1 thành viên BTT phụ trách (mục 05)');
     if (publish && selected.length === 0 && !photo.needed) errs.push('Chọn ít nhất 1 ấn phẩm hoặc bật chụp ảnh');
     return errs;
   }
@@ -144,7 +124,6 @@ function EventForm({ event }: { event?: EventDetail }) {
     const errs = validate(publish);
     setErrors(errs);
     if (errs.length) return;
-    const n = (v: number | '') => (v === '' ? null : v);
     const body = {
       name: info.name,
       location: info.location,
@@ -155,27 +134,26 @@ function EventForm({ event }: { event?: EventDetail }) {
       offlineContent: info.offlineContent || null,
       photographerNeeded: photo.needed,
       photographerQuantity: photo.needed ? photo.quantity : 0,
-      photographerAssigneeId: photo.needed ? n(photo.assigneeId) : null,
-      recapAssigneeId: n(recapAssigneeId),
       memberIds,
       deliverables: selected.map((type) => {
         const d = items[type]!;
-        return {
-          id: d.id,
-          type,
-          title: type === 'OTHER' ? d.title : undefined,
-          dimensions: d.dimensions || null,
-          deadline: fromInputs(d.date, d.time),
-          assigneeId: n(d.assigneeId),
-        };
+        return { id: d.id, type, title: type === 'OTHER' ? d.title : undefined, dimensions: d.dimensions || null, deadline: fromInputs(d.date, d.time) };
       }),
       publish,
     };
     setSaving(publish ? 'publish' : 'draft');
     try {
       const res = await api<{ event: EventDetail }>(isEdit ? `/events/${event.id}` : '/events', { method: isEdit ? 'PUT' : 'POST', body });
-      setFlash(publish ? (isEdit && !isDraft ? `Đã lưu thay đổi “${res.event.name}”.` : `Đã tạo “${res.event.name}” và phân công cho BTT.`) : `Đã lưu nháp “${res.event.name}”.`);
-      router.replace('/bch/events');
+      setFlash(
+        publish
+          ? isEdit && !isDraft
+            ? `Đã lưu thay đổi “${res.event.name}”.`
+            : `Đã tạo “${res.event.name}” và phân công cho ${memberIds.length} BTT.`
+          : `Đã lưu nháp “${res.event.name}”.`,
+      );
+      onSaved?.();
+      if (isEdit) router.back(); // đóng màn sửa
+      openTab('bch/events');
     } catch (e) {
       const err = e as ApiError;
       setErrors(err.details?.map((d) => d.message) ?? [err.message]);
@@ -186,11 +164,7 @@ function EventForm({ event }: { event?: EventDetail }) {
 
   return (
     <Screen>
-      <PageHeader
-        eyebrow="BCH / Ban Chấp hành"
-        title={isEdit ? 'Sửa brief sự kiện' : 'Tạo brief sự kiện'}
-        description="Biến kế hoạch sự kiện thành các task media rõ ràng, dễ theo dõi."
-      />
+      <PageHeader eyebrow="BCH / Ban Chấp hành" title={isEdit ? 'Sửa brief sự kiện' : 'Tạo brief sự kiện'} description="Biến kế hoạch sự kiện thành các task media rõ ràng, dễ theo dõi." />
       <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
         <Badge tone="navy">{isDraft ? 'Nháp' : 'Đã gửi'}</Badge>
         <T size={11} color={colors.muted}>
@@ -209,18 +183,21 @@ function EventForm({ event }: { event?: EventDetail }) {
           <Input value={info.location} onChangeText={setI('location')} icon="map-pin" autoCapitalize="sentences" />
         </Field>
         <Field label="Ngày diễn ra *">
-          <DateTimeField mode="date" value={info.date} onChange={setI('date')} />
+          <DateField value={info.date} onChange={setI('date')} title="Ngày diễn ra" min={isEdit ? undefined : today} />
         </Field>
         <Field label="Thời gian *">
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
             <View style={{ flex: 1 }}>
-              <DateTimeField mode="time" value={info.startTime} onChange={setI('startTime')} />
+              <TimeField value={info.startTime} onChange={setI('startTime')} title="Giờ bắt đầu" />
             </View>
             <T color={colors.muted}>–</T>
             <View style={{ flex: 1 }}>
-              <DateTimeField mode="time" value={info.endTime} onChange={setI('endTime')} />
+              <TimeField value={info.endTime} onChange={setI('endTime')} title="Giờ kết thúc" />
             </View>
           </View>
+        </Field>
+        <Field label="Ban Truyền thông phụ trách *" hint="Cả nhóm cùng phụ trách mọi task và nhận bản tin nhắc việc lúc 09:00 mỗi ngày.">
+          <MemberPicker people={btts} value={memberIds} onChange={setMemberIds} placeholder="Chọn thành viên BTT" />
         </Field>
         <Field label="Ghi chú chi tiết / Thông tin recap">
           <Input value={info.notes} onChangeText={setI('notes')} multiline autoCapitalize="sentences" />
@@ -252,8 +229,11 @@ function EventForm({ event }: { event?: EventDetail }) {
           const d = items[t]!;
           return (
             <View key={t} style={{ backgroundColor: colors.soft, borderWidth: 1, borderColor: colors.line, borderRadius: 12, padding: 12, gap: 10 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <T>✓ {TASK_TYPE_LABEL[t]}</T>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                  <Icon name="check-circle" size={15} />
+                  <T>{TASK_TYPE_LABEL[t]}</T>
+                </View>
                 <Pressable onPress={() => toggleItem(t)} hitSlop={10}>
                   <Icon name="x" />
                 </Pressable>
@@ -269,15 +249,12 @@ function EventForm({ event }: { event?: EventDetail }) {
               <Field label="Hạn chót *" hint="ICT (UTC+7)">
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <View style={{ flex: 3 }}>
-                    <DateTimeField mode="date" value={d.date} onChange={(v) => updateItem(t, { date: v })} />
+                    <DateField value={d.date} onChange={(v) => updateItem(t, { date: v })} title={`Hạn chót · ${TASK_TYPE_LABEL[t]}`} />
                   </View>
                   <View style={{ flex: 2 }}>
-                    <DateTimeField mode="time" value={d.time} onChange={(v) => updateItem(t, { time: v })} />
+                    <TimeField value={d.time} onChange={(v) => updateItem(t, { time: v })} title={`Giờ hạn chót · ${TASK_TYPE_LABEL[t]}`} />
                   </View>
                 </View>
-              </Field>
-              <Field label="Giao cho">
-                <Select value={d.assigneeId} options={assigneeOptions} onChange={(v) => updateItem(t, { assigneeId: v })} disabled={!members.length} placeholder="Chọn BTT ở mục 05 trước" />
               </Field>
             </View>
           );
@@ -308,60 +285,33 @@ function EventForm({ event }: { event?: EventDetail }) {
           <Toggle value={photo.needed} onChange={(v) => setPhoto({ ...photo, needed: v })} />
         </View>
         {photo.needed && (
-          <>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View>
               <T size={12}>Số người chụp *</T>
-              <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.line, borderRadius: 8, backgroundColor: colors.white }}>
-                <Pressable style={{ padding: 10 }} onPress={() => setPhoto({ ...photo, quantity: Math.max(1, photo.quantity - 1) })}>
-                  <Icon name="minus" />
-                </Pressable>
-                <T style={{ width: 28, textAlign: 'center' }}>{photo.quantity}</T>
-                <Pressable style={{ padding: 10 }} onPress={() => setPhoto({ ...photo, quantity: Math.min(20, photo.quantity + 1) })}>
-                  <Icon name="plus" />
-                </Pressable>
-              </View>
+              <T size={11} color={colors.muted}>
+                {info.date ? formatYmd(info.date) : 'Chọn ngày ở mục 01'}
+              </T>
             </View>
-            <Field label="Người phụ trách xác nhận chụp ảnh">
-              <Select value={photo.assigneeId} options={assigneeOptions} onChange={(v) => setPhoto({ ...photo, assigneeId: v })} disabled={!members.length} placeholder="Chọn BTT ở mục 05 trước" />
-            </Field>
-          </>
+            <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.line, borderRadius: 8, backgroundColor: colors.white }}>
+              <Pressable style={{ padding: 10 }} onPress={() => setPhoto({ ...photo, quantity: Math.max(1, photo.quantity - 1) })}>
+                <Icon name="minus" />
+              </Pressable>
+              <T style={{ width: 28, textAlign: 'center' }}>{photo.quantity}</T>
+              <Pressable style={{ padding: 10 }} onPress={() => setPhoto({ ...photo, quantity: Math.min(20, photo.quantity + 1) })}>
+                <Icon name="plus" />
+              </Pressable>
+            </View>
+          </View>
         )}
         <T size={11} color={colors.muted}>
-          BTT nhận nhắc mỗi ngày từ 3 ngày trước sự kiện cho tới khi đánh dấu hoàn thành.
+          Task chụp ảnh vào bản tin hằng ngày của BTT từ 3 ngày trước sự kiện; recap từ hôm sau sự kiện (hạn 7 ngày).
         </T>
-      </Card>
-
-      {/* 05 */}
-      <Card style={{ gap: 14 }}>
-        <Section no="05" title="Phân công Ban Truyền thông" desc="Chọn các thành viên BTT phụ trách (chọn được nhiều người)." />
-        {btts.map((u) => {
-          const on = memberIds.includes(u.id);
-          return (
-            <Pressable
-              key={u.id}
-              onPress={() => setMemberIds(on ? memberIds.filter((m) => m !== u.id) : [...memberIds, u.id])}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: on ? colors.primary : colors.line, backgroundColor: on ? colors.ice : colors.white }}
-            >
-              <Icon name={on ? 'check-square' : 'square'} color={on ? colors.primary : colors.line} />
-              <Avatar name={u.fullName} size={28} />
-              <View>
-                <T>{u.fullName}</T>
-                <T size={11} color={colors.muted}>
-                  @{u.username}
-                </T>
-              </View>
-            </Pressable>
-          );
-        })}
-        <Field label="Người phụ trách recap sau sự kiện" hint="Hạn recap = 7 ngày sau khi sự kiện kết thúc.">
-          <Select value={recapAssigneeId} options={assigneeOptions} onChange={setRecapAssigneeId} disabled={!members.length} placeholder="Chọn BTT ở trên trước" />
-        </Field>
       </Card>
 
       <Card style={{ gap: 10 }}>
         <T>Sẵn sàng gửi cho đội media?</T>
         <T size={11} color={colors.muted}>
-          {selected.length} ấn phẩm · {photo.needed ? `${photo.quantity} người chụp` : 'không chụp ảnh'} · {taskCount} task sẽ giao cho {memberIds.length} BTT
+          {selected.length} ấn phẩm · {photo.needed ? `${photo.quantity} người chụp` : 'không chụp ảnh'} · {taskCount} task cho {memberIds.length} BTT
         </T>
         <Button title={isDraft ? 'Gửi & phân công task' : 'Lưu thay đổi'} icon="arrow-right" onPress={() => submit(true)} loading={saving === 'publish'} disabled={!!saving} />
         {isDraft && <Button title="Lưu nháp" variant="outline" onPress={() => submit(false)} loading={saving === 'draft'} disabled={!!saving} />}
@@ -373,7 +323,7 @@ function EventForm({ event }: { event?: EventDetail }) {
             onPress={async () => {
               await api(`/events/${event.id}`, { method: 'DELETE' });
               setFlash('Đã xoá bản nháp.');
-              router.replace('/bch/events');
+              router.back();
             }}
           />
         )}

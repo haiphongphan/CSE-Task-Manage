@@ -54,19 +54,24 @@ export function Field({
   error,
   children,
   className,
+  custom,
 }: {
   label?: string;
   hint?: string;
   error?: string;
   children: ReactNode;
   className?: string;
+  /** true khi bên trong là picker tự làm (DatePicker, Dropdown...): dùng <div> thay vì <label>,
+   *  vì <label> sẽ "chuyển" mọi cú bấm bên trong popover về nút đầu tiên và làm popover đóng lại. */
+  custom?: boolean;
 }) {
+  const Tag = custom ? 'div' : 'label';
   return (
-    <label className={cx('flex flex-col gap-[7px]', className)}>
+    <Tag className={cx('flex flex-col gap-[7px]', className)} role={custom ? 'group' : undefined} aria-label={custom ? label : undefined}>
       {label && <span className="label">{label}</span>}
       {children}
       {error ? <span className="text-[11px] text-danger">{error}</span> : hint && <span className="hint">{hint}</span>}
-    </label>
+    </Tag>
   );
 }
 

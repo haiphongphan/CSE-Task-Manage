@@ -3,7 +3,6 @@ import Feather from '@expo/vector-icons/Feather';
 import { useState, type ComponentProps, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -247,61 +246,6 @@ export function Toggle({ value, onChange }: { value: boolean; onChange: (v: bool
   return <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.primary, false: colors.line }} thumbColor={colors.white} />;
 }
 
-/** Ô chọn kiểu dropdown: bấm mở danh sách dạng bottom sheet */
-export function Select<V extends string | number>({
-  value,
-  onChange,
-  options,
-  placeholder = 'Chọn...',
-  disabled,
-  compact,
-}: {
-  value: V | null;
-  onChange: (v: V) => void;
-  options: { value: V; label: string }[];
-  placeholder?: string;
-  disabled?: boolean;
-  compact?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const current = options.find((o) => o.value === value);
-  return (
-    <>
-      <Pressable
-        disabled={disabled}
-        onPress={() => setOpen(true)}
-        style={[styles.inputWrap, compact && { minHeight: 32, borderRadius: 16, paddingHorizontal: 12 }, disabled && { opacity: 0.6 }]}
-      >
-        <T size={compact ? 12 : 13} color={current ? colors.navy : colors.muted} style={{ flex: 1 }}>
-          {current?.label ?? placeholder}
-        </T>
-        <Icon name="chevron-down" size={compact ? 14 : 16} />
-      </Pressable>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.sheetBackdrop} onPress={() => setOpen(false)}>
-          <View style={styles.sheet}>
-            <ScrollView style={{ maxHeight: 420 }}>
-              {options.map((o) => (
-                <Pressable
-                  key={String(o.value)}
-                  onPress={() => {
-                    onChange(o.value);
-                    setOpen(false);
-                  }}
-                  style={[styles.sheetItem, o.value === value && { backgroundColor: colors.ice }]}
-                >
-                  <T size={14}>{o.label}</T>
-                  {o.value === value && <Icon name="check" />}
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
-    </>
-  );
-}
-
 export function Loading() {
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 48, backgroundColor: colors.ice }}>
@@ -360,7 +304,4 @@ export const styles = StyleSheet.create({
   input: { flex: 1, minHeight: 44, fontSize: 13, color: colors.navy, fontFamily: fonts.regular },
   badge: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
   chip: { minHeight: 36, borderRadius: 8, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, paddingHorizontal: 14, justifyContent: 'center' },
-  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(3,4,94,0.3)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 12, paddingBottom: 32 },
-  sheetItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, borderRadius: 10 },
 });

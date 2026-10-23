@@ -5,10 +5,11 @@ import { useEffect, useState } from 'react';
 import { ArrowUp, ArrowDown, ArrowUpRight, CalendarDays, Check, Clock, Download, ListChecks, PenSquare, Search, TrendingUp, Play } from 'lucide-react';
 import { Alert, Badge, Button, Empty, ErrorBox, Field, Loading, PageHeader, ProgressBar, StatCard, cx } from '@/components/ui';
 import { TaskStatusBadge } from '@/components/status';
+import { DatePicker, Dropdown, TimePicker } from '@/components/pickers';
 import { API_URL, api, qs, tokenStore } from '@/lib/api';
 import { useApi, useDebounced } from '@/lib/useApi';
 import { fmtDayTime, fmtNow, fromInputs, PHASE_LABEL, TASK_STATUS_LABEL, timeLeft, toDateInput, toTimeInput } from '@/lib/format';
-import type { EventSummary, MiniUser, Task, TaskStatus } from '@/lib/types';
+import type { EventSummary, Task, TaskStatus } from '@/lib/types';
 
 interface TasksResponse {
   items: Task[];
@@ -21,13 +22,13 @@ interface TasksResponse {
 
 export default function AdminTasksPage() {
   const [search, setSearch] = useState('');
-  const [team, setTeam] = useState('');
+  const [eventId, setEventId] = useState<number | ''>('');
   const [status, setStatus] = useState('');
   const [sort, setSort] = useState<'deadline_asc' | 'deadline_desc'>('deadline_asc');
   const [page, setPage] = useState(1);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const q = useDebounced(search);
-  const { data, error, loading, reload } = useApi<TasksResponse>(`/tasks${qs({ search: q, team, status, sort, page, pageSize: 10 })}`);
+  const { data, error, loading, reload } = useApi<TasksResponse>(`/tasks${qs({ search: q, eventId, status, sort, page, pageSize: 10 })}`);
   const [selected, setSelected] = useState<Task | null>(null);
   const [notice, setNotice] = useState('');
 
@@ -47,9 +48,13 @@ export default function AdminTasksPage() {
     URL.revokeObjectURL(a.href);
   }
 
-  async function runReminders() {
-    const r = await api<{ photo: number; recap: number; deadline: number }>('/admin/run-reminders', { method: 'POST' });
-    setNotice(`Đã chạy nhắc nhở: ${r.photo} nhắc chụp ảnh, ${r.recap} nhắc recap, ${r.deadline} cảnh báo hạn chót mới.`);
+  async function runDigest() {
+    const r = await api<{ recipients: number; sent: number }>('/admin/run-digest', { method: 'POST' });
+    setNotice(
+      r.sent
+        ? `Đã gửi bản tin hằng ngày (push + email) cho ${r.sent} thành viên BTT.`
+        : `${r.recipients} BTT có task cần làm, nhưng bản tin hôm nay đã được gửi trước đó nên không gửi lại.`,
+    );
   }
 
   const stats = data?.stats;
@@ -69,8 +74,8 @@ export default function AdminTasksPage() {
         }
         action={
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" icon={<Play className="size-4" />} onClick={runReminders} title="Chạy job nhắc nhở hằng ngày ngay bây giờ (demo)">
-              Chạy nhắc nhở
+            <Button variant="outline" icon={<Play className="size-4" />} onClick={runDigest} title="Gửi bản tin 09:00 ngay bây giờ (demo)">
+              Gửi bản tin ngay
             </Button>
             <Button variant="outline" icon={<Download className="size-4" />} onClick={exportCsv}>
               Xuất tổng quan
@@ -147,20 +152,25 @@ export default function AdminTasksPage() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            <select className="input !min-h-[38px] !w-auto !bg-white !py-1.5 text-primary" value={team} onChange={(e) => (setTeam(e.target.value), setPage(1))}>
-              <option value="">Tất cả đội</option>
-              <option value="BTT">BTT</option>
-              <option value="BCH">BCH</option>
-            </select>
-            <select className="input !min-h-[38px] !w-auto !bg-white !py-1.5 text-primary" value={status} onChange={(e) => (setStatus(e.target.value), setPage(1))}>
-              <option value="">Tất cả trạng thái</option>
-              {(Object.keys(TASK_STATUS_LABEL) as TaskStatus[]).map((s) => (
-                <option key={s} value={s}>
-                  {TASK_STATUS_LABEL[s]}
-                </option>
-              ))}
-              <option value="OVERDUE">Quá hạn</option>
-            </select>
+            <Dropdown
+              size="sm"
+              className="w-52"
+              width={260}
+              value={eventId}
+              onChange={(v) => (setEventId(v), setPage(1))}
+              options={[{ value: '' as const, label: 'Tất cả sự kiện' }, ...(data?.events ?? []).map((e) => ({ value: e.id, label: e.name }))]}
+            />
+            <Dropdown
+              size="sm"
+              className="w-44"
+              value={status}
+              onChange={(v) => (setStatus(v), setPage(1))}
+              options={[
+                { value: '', label: 'Tất cả trạng thái' },
+                ...(Object.keys(TASK_STATUS_LABEL) as TaskStatus[]).map((s) => ({ value: s as string, label: TASK_STATUS_LABEL[s] })),
+                { value: 'OVERDUE', label: 'Quá hạn' },
+              ]}
+            />
             <Button
               variant="outline"
               size="sm"
@@ -181,7 +191,7 @@ export default function AdminTasksPage() {
             <div className="flex flex-col">
               <div className="hidden grid-cols-[1fr_130px_120px_110px] gap-3 bg-soft px-3 py-3 text-[11px] uppercase text-navy md:grid">
                 <span>Task / Sự kiện</span>
-                <span>Người nhận</span>
+                <span>BTT phụ trách</span>
                 <span>Hạn chót</span>
                 <span>Trạng thái</span>
               </div>
@@ -203,7 +213,7 @@ export default function AdminTasksPage() {
                       </span>
                       <ProgressBar value={t.progress} />
                     </span>
-                    <span className="text-xs text-navy">{t.assignee ? `${t.assignee.fullName} · ${t.assignee.role}` : 'Chưa giao'}</span>
+                    <span className="text-xs text-navy">{t.team?.length ? t.team.map((m) => m.fullName).join(', ') : 'Chưa phân công'}</span>
                     <span className="text-xs text-navy">
                       {fmtDayTime(t.deadline)}
                       <span className="block text-[11px] text-primary">{t.status === 'COMPLETED' ? 'Đã xong' : left.text}</span>
@@ -251,10 +261,8 @@ export default function AdminTasksPage() {
 }
 
 function TaskEditor({ task, onSaved }: { task: Task; onSaved: () => void }) {
-  const { data: users } = useApi<{ items: (MiniUser & { username: string })[] }>('/users/options');
   const [form, setForm] = useState({
     title: task.title,
-    assigneeId: task.assignee?.id ?? '',
     date: toDateInput(task.deadline),
     time: toTimeInput(task.deadline),
     status: task.status,
@@ -272,14 +280,13 @@ function TaskEditor({ task, onSaved }: { task: Task; onSaved: () => void }) {
         method: 'PATCH',
         body: {
           title: form.title,
-          assigneeId: form.assigneeId === '' ? null : Number(form.assigneeId),
           deadline: fromInputs(form.date, form.time),
           status: form.status,
           progress: Number(form.progress),
           notes: form.notes || null,
         },
       });
-      setMsg({ tone: 'success', text: 'Đã lưu. Người nhận đã được thông báo.' });
+      setMsg({ tone: 'success', text: 'Đã lưu. Nhóm BTT phụ trách đã được thông báo.' });
       onSaved();
     } catch (err) {
       setMsg({ tone: 'error', text: (err as Error).message });
@@ -302,32 +309,24 @@ function TaskEditor({ task, onSaved }: { task: Task; onSaved: () => void }) {
       <Field label="Tên task *">
         <input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       </Field>
-      <Field label="Giao cho *">
-        <select className="input" value={form.assigneeId} onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}>
-          <option value="">— Chưa giao —</option>
-          {users?.items
-            .filter((u) => u.role !== 'ADMIN')
-            .map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.fullName} · {u.role}
-              </option>
-            ))}
-        </select>
-      </Field>
-      <Field label="Hạn chót *">
+      <div className="flex flex-col gap-1.5">
+        <span className="label">BTT phụ trách (cả nhóm)</span>
+        <div className="flex flex-wrap gap-1">
+          {task.team?.length ? task.team.map((m) => <Badge key={m.id}>{m.fullName}</Badge>) : <span className="hint">Sự kiện chưa phân công BTT</span>}
+        </div>
+      </div>
+      <Field custom label="Hạn chót *">
         <div className="grid grid-cols-[1fr_110px] gap-2">
-          <input type="date" className="input" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-          <input type="time" className="input" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} />
+          <DatePicker value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
+          <TimePicker value={form.time} onChange={(v) => setForm({ ...form, time: v })} />
         </div>
       </Field>
-      <Field label="Trạng thái *">
-        <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as TaskStatus })}>
-          {(Object.keys(TASK_STATUS_LABEL) as TaskStatus[]).map((s) => (
-            <option key={s} value={s}>
-              {TASK_STATUS_LABEL[s]}
-            </option>
-          ))}
-        </select>
+      <Field custom label="Trạng thái *">
+        <Dropdown
+          value={form.status}
+          onChange={(v) => setForm({ ...form, status: v })}
+          options={(Object.keys(TASK_STATUS_LABEL) as TaskStatus[]).map((s) => ({ value: s, label: TASK_STATUS_LABEL[s] }))}
+        />
       </Field>
       <Field label={`Tiến độ * · ${form.status === 'COMPLETED' ? 100 : form.progress}%`}>
         <input

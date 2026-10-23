@@ -7,12 +7,11 @@ import { api } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { fmtDayTime } from '@/lib/format';
 import type { AppNotification } from '@/lib/types';
+import { PushSettingsCard } from '@/components/PushPrompt';
 
 const TYPE_LABEL: Record<string, string> = {
+  DAILY_DIGEST: 'Bản tin 09:00',
   MANUAL_REMIND: 'Nhắc việc từ BCH',
-  PHOTO_REMINDER: 'Nhắc chụp ảnh',
-  RECAP_REMINDER: 'Nhắc recap',
-  DEADLINE_ALERT: 'Sắp tới hạn',
   EVENT_ASSIGNED: 'Phân công mới',
   TASK_UPDATED: 'Cập nhật',
 };
@@ -39,6 +38,7 @@ export default function NotificationsPage() {
           </Button>
         }
       />
+      <PushSettingsCard />
       {error ? (
         <ErrorBox message={error} onRetry={reload} />
       ) : loading && !data ? (
@@ -61,9 +61,9 @@ export default function NotificationsPage() {
                   {n.sentBy ? ` · từ ${n.sentBy.fullName}` : ' · hệ thống'}
                 </p>
               </div>
-              {n.eventId && (
+              {(n.eventId || n.type === 'DAILY_DIGEST') && (
                 <Link
-                  href={`/events/${n.eventId}`}
+                  href={n.eventId ? `/events/${n.eventId}` : '/btt/reminders'}
                   onClick={() => api(`/notifications/${n.id}/read`, { method: 'POST' }).catch(() => {})}
                   className="self-center text-[13px] text-primary hover:underline"
                 >

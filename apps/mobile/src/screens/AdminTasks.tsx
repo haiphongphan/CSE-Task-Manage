@@ -3,15 +3,16 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { DateTimeField } from '@/components/DateTimeField';
+import { DateField, Select, TimeField } from '@/components/pickers';
 import { TaskStatusBadge } from '@/components/shared';
-import { Alert, Badge, Button, Card, Chips, Divider, ErrorBox, Field, Icon, Input, Loading, PageHeader, ProgressBar, Screen, Select, StatCard, T } from '@/components/ui';
+import { Alert, Badge, Button, Card, Chips, Divider, ErrorBox, Field, Icon, Input, Loading, PageHeader, ProgressBar, Screen, StatCard, T } from '@/components/ui';
 import { api, qs } from '@/lib/api';
 import { useRoleAllowed } from '@/lib/auth';
+import { useOnTabActive } from '@/lib/workspace';
 import { useApi, useDebounced } from '@/lib/useApi';
 import { fmtDayTime, fmtNow, fromInputs, PHASE_LABEL, TASK_STATUS_LABEL, timeLeft, toDateInput, toTimeInput } from '@/lib/format';
 import { colors } from '@/lib/theme';
-import type { EventSummary, MiniUser, Task, TaskStatus } from '@/lib/types';
+import type { EventSummary, Task, TaskStatus } from '@/lib/types';
 
 interface Resp {
   items: Task[];
@@ -31,6 +32,7 @@ export default function AdminTasksScreen() {
   const [page, setPage] = useState(1);
   const q = useDebounced(search);
   const { data, error, loading, reload } = useApi<Resp>(ok ? `/tasks${qs({ search: q, status, page, pageSize: 10 })}` : null);
+  useOnTabActive(reload); // mở lại tab -> tải lại ngầm
   const [selected, setSelected] = useState<Task | null>(null);
   const [notice, setNotice] = useState('');
   if (!ok) return <Loading />;
@@ -41,12 +43,12 @@ export default function AdminTasksScreen() {
     <Screen onRefresh={reload}>
       <PageHeader eyebrow="Quản trị / Tổng quan công việc" title="Quản lý task" description="Mọi sự kiện, mọi đội, một bức tranh rõ ràng." meta={fmtNow()} />
       <Button
-        title="Chạy nhắc nhở (demo)"
+        title="Gửi bản tin 09:00 ngay (demo)"
         variant="outline"
         icon="play"
         onPress={async () => {
-          const r = await api<{ photo: number; recap: number; deadline: number }>('/admin/run-reminders', { method: 'POST' });
-          setNotice(`Đã chạy: ${r.photo} nhắc chụp ảnh, ${r.recap} nhắc recap, ${r.deadline} cảnh báo hạn chót mới.`);
+          const r = await api<{ recipients: number; sent: number }>('/admin/run-digest', { method: 'POST' });
+          setNotice(r.sent ? `Đã gửi bản tin (push + email) cho ${r.sent} thành viên BTT.` : 'Bản tin hôm nay đã được gửi trước đó, không gửi lại.');
         }}
       />
       {notice ? <Alert tone="success">{notice}</Alert> : null}
@@ -97,7 +99,7 @@ export default function AdminTasksScreen() {
                 <TaskStatusBadge task={t} />
               </View>
               <T size={11} color={colors.muted}>
-                {t.event?.name} · {t.code} · {t.assignee ? `${t.assignee.fullName} · ${t.assignee.role}` : 'Chưa giao'}
+                {t.event?.name} · {t.code} · {t.team?.length ? t.team.map((m) => m.fullName).join(', ') : 'Chưa phân công'}
               </T>
               <T size={11} color={colors.primary}>
                 {fmtDayTime(t.deadline)} · {t.status === 'COMPLETED' ? 'Đã xong' : timeLeft(t.deadline).text}
@@ -135,10 +137,8 @@ export default function AdminTasksScreen() {
 }
 
 function TaskEditor({ task, onClose, onSaved }: { task: Task; onClose: () => void; onSaved: () => void }) {
-  const { data: users } = useApi<{ items: MiniUser[] }>('/users/options');
   const [form, setForm] = useState({
     title: task.title,
-    assigneeId: (task.assignee?.id ?? '') as number | '',
     date: toDateInput(task.deadline),
     time: toTimeInput(task.deadline),
     status: task.status,
@@ -156,7 +156,6 @@ function TaskEditor({ task, onClose, onSaved }: { task: Task; onClose: () => voi
         method: 'PATCH',
         body: {
           title: form.title,
-          assigneeId: form.assigneeId === '' ? null : form.assigneeId,
           deadline: fromInputs(form.date, form.time),
           status: form.status,
           progress: form.progress,
@@ -170,8 +169,6 @@ function TaskEditor({ task, onClose, onSaved }: { task: Task; onClose: () => voi
       setSaving(false);
     }
   };
-
-  const userOptions = [{ value: '' as const, label: '— Chưa giao —' }, ...(users?.items ?? []).filter((u) => u.role !== 'ADMIN').map((u) => ({ value: u.id, label: `${u.fullName} · ${u.role}` }))];
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -193,21 +190,23 @@ function TaskEditor({ task, onClose, onSaved }: { task: Task; onClose: () => voi
             <Field label="Tên task *">
               <Input value={form.title} onChangeText={(v) => setForm({ ...form, title: v })} autoCapitalize="sentences" />
             </Field>
-            <Field label="Giao cho *">
-              <Select value={form.assigneeId} options={userOptions} onChange={(v) => setForm({ ...form, assigneeId: v })} />
+            <Field label="BTT phụ trách (cả nhóm)">
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {task.team?.length ? task.team.map((m) => <Badge key={m.id}>{m.fullName}</Badge>) : <T size={12} color={colors.muted}>Sự kiện chưa phân công BTT</T>}
+              </View>
             </Field>
             <Field label="Hạn chót *">
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <View style={{ flex: 3 }}>
-                  <DateTimeField mode="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
+                  <DateField value={form.date} onChange={(v) => setForm({ ...form, date: v })} title="Hạn chót" />
                 </View>
                 <View style={{ flex: 2 }}>
-                  <DateTimeField mode="time" value={form.time} onChange={(v) => setForm({ ...form, time: v })} />
+                  <TimeField value={form.time} onChange={(v) => setForm({ ...form, time: v })} title="Giờ hạn chót" />
                 </View>
               </View>
             </Field>
             <Field label="Trạng thái *">
-              <Select value={form.status} options={STATUS_OPTIONS} onChange={(v) => setForm({ ...form, status: v })} />
+              <Select value={form.status} options={STATUS_OPTIONS} onChange={(v) => setForm({ ...form, status: v })} title="Trạng thái task" />
             </Field>
             <Field label={`Tiến độ · ${form.status === 'COMPLETED' ? 100 : form.progress}%`}>
               <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>

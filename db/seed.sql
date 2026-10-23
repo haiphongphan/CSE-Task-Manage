@@ -12,10 +12,14 @@
 -- Mật khẩu mọi tài khoản mẫu: matkhau123
 -- =====================================================================
 
+-- Supabase cài pgcrypto (crypt, gen_salt) trong schema "extensions" -> thêm vào đường tìm.
+-- Chạy local không có schema này cũng không sao.
+SET search_path TO public, extensions;
+
 BEGIN;
 
 -- Xoá dữ liệu cũ, đưa bộ đếm ID về 1
-TRUNCATE activity_logs, notifications, push_tokens, tasks, event_members, events, users
+TRUNCATE activity_logs, notifications, web_push_subscriptions, push_tokens, tasks, event_members, events, users
   RESTART IDENTITY CASCADE;
 ALTER SEQUENCE task_code_seq RESTART WITH 1;
 
@@ -108,48 +112,54 @@ INSERT INTO event_members (event_id, user_id) VALUES
 -- 4) Task
 --    Quy ước: PHOTOGRAPHER hạn = giờ bắt đầu sự kiện;
 --             RECAP hạn = giờ kết thúc + 7 ngày
+--    Task không giao riêng cho ai: cả nhóm BTT của sự kiện cùng phụ trách.
 -- ---------------------------------------------------------------------
-INSERT INTO tasks (event_id, type, title, dimensions, deadline, assignee_id, status, progress, notes, completed_at) VALUES
+INSERT INTO tasks (event_id, type, title, dimensions, deadline, status, progress, notes, completed_at) VALUES
 -- Sự kiện 1
-(1, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(1, '09:00'), pg_temp.uid('minh.tran'), 'IN_PROGRESS', 75, 'Dùng key visual đã duyệt. Xuất banner mạng xã hội 1920 × 1080 px.', NULL),
-(1, 'BACKDROP',          'Backdrop',          '600 × 300 cm',   pg_temp.vn(1, '17:00'), pg_temp.uid('bao.le'),    'IN_PROGRESS', 50, NULL, NULL),
-(1, 'BANDROLL',          'Bandroll',          '500 × 80 cm',    pg_temp.vn(1, '17:00'), pg_temp.uid('bao.le'),    'COMPLETED',  100, NULL, now() - interval '1 day'),
-(1, 'STANDEE',           'Standee',           '80 × 180 cm',    pg_temp.vn(1, '17:00'), pg_temp.uid('an.vo'),     'COMPLETED',  100, NULL, now() - interval '1 day'),
-(1, 'INVITATION_LETTER', 'Thư mời',           'A5 · 148 × 210 mm', pg_temp.vn(0, '23:00'), pg_temp.uid('minh.tran'), 'IN_REVIEW', 90, 'Chờ BCH duyệt nội dung.', NULL),
-(1, 'OTHER',             'Instagram story',   '1080 × 1920 px', pg_temp.vn(1, '12:00'), pg_temp.uid('an.vo'),     'COMPLETED',  100, NULL, now() - interval '1 day'),
-(1, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '1 thợ chụp ảnh', pg_temp.vn(3, '09:00'), pg_temp.uid('minh.tran'), 'TODO', 0, NULL, NULL),
-(1, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(10, '16:00'), pg_temp.uid('an.vo'),    'TODO', 0, NULL, NULL),
+(1, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(1, '09:00'), 'IN_PROGRESS', 75, 'Dùng key visual đã duyệt. Xuất banner mạng xã hội 1920 × 1080 px.', NULL),
+(1, 'BACKDROP',          'Backdrop',          '600 × 300 cm',   pg_temp.vn(1, '17:00'), 'IN_PROGRESS', 50, NULL, NULL),
+(1, 'BANDROLL',          'Bandroll',          '500 × 80 cm',    pg_temp.vn(1, '17:00'), 'COMPLETED',  100, NULL, now() - interval '1 day'),
+(1, 'STANDEE',           'Standee',           '80 × 180 cm',    pg_temp.vn(1, '17:00'), 'COMPLETED',  100, NULL, now() - interval '1 day'),
+(1, 'INVITATION_LETTER', 'Thư mời',           'A5 · 148 × 210 mm', pg_temp.vn(0, '23:00'), 'IN_REVIEW', 90, 'Chờ BCH duyệt nội dung.', NULL),
+(1, 'OTHER',             'Instagram story',   '1080 × 1920 px', pg_temp.vn(1, '12:00'), 'COMPLETED',  100, NULL, now() - interval '1 day'),
+(1, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '1 người chụp ảnh', pg_temp.vn(3, '09:00'), 'TODO', 0, NULL, NULL),
+(1, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(10, '16:00'), 'TODO', 0, NULL, NULL),
 -- Sự kiện 2
-(2, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(5, '12:00'), pg_temp.uid('minh.tran'), 'IN_PROGRESS', 30, NULL, NULL),
-(2, 'STANDEE',           'Standee',           '80 × 180 cm',    pg_temp.vn(6, '12:00'), pg_temp.uid('duc.hoang'), 'TODO', 0, NULL, NULL),
-(2, 'INVITATION_LETTER', 'Thư mời diễn giả',  'A5',             pg_temp.vn(4, '12:00'), pg_temp.uid('duc.hoang'), 'COMPLETED', 100, NULL, now() - interval '2 hours'),
-(2, 'OTHER',             'Thẻ diễn giả',      '1080 × 1350 px', pg_temp.vn(6, '18:00'), NULL,                     'TODO', 0, NULL, NULL),
-(2, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(15, '16:00'), pg_temp.uid('duc.hoang'), 'TODO', 0, NULL, NULL),
+(2, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(5, '12:00'), 'IN_PROGRESS', 30, NULL, NULL),
+(2, 'STANDEE',           'Standee',           '80 × 180 cm',    pg_temp.vn(6, '12:00'), 'TODO', 0, NULL, NULL),
+(2, 'INVITATION_LETTER', 'Thư mời diễn giả',  'A5',             pg_temp.vn(4, '12:00'), 'COMPLETED', 100, NULL, now() - interval '2 hours'),
+(2, 'OTHER',             'Thẻ diễn giả',      '1080 × 1350 px', pg_temp.vn(6, '18:00'), 'TODO', 0, NULL, NULL),
+(2, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(15, '16:00'), 'TODO', 0, NULL, NULL),
 -- Sự kiện 3 (đã kết thúc, recap còn nợ)
-(3, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(-7, '12:00'), pg_temp.uid('an.vo'),     'COMPLETED', 100, NULL, now() - interval '8 days'),
-(3, 'BACKDROP',          'Backdrop',          '400 × 250 cm',   pg_temp.vn(-6, '12:00'), pg_temp.uid('minh.tran'), 'COMPLETED', 100, NULL, now() - interval '7 days'),
-(3, 'STANDEE',           'Standee',           '80 × 180 cm',    pg_temp.vn(-6, '12:00'), pg_temp.uid('minh.tran'), 'COMPLETED', 100, NULL, now() - interval '7 days'),
-(3, 'OTHER',             'Video teaser',      '1080 × 1920 px', pg_temp.vn(-5, '12:00'), pg_temp.uid('an.vo'),     'COMPLETED', 100, NULL, now() - interval '6 days'),
-(3, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '2 thợ chụp ảnh', pg_temp.vn(-4, '16:00'), pg_temp.uid('an.vo'),     'COMPLETED', 100, NULL, now() - interval '6 days'),
-(3, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(3, '18:00'),  pg_temp.uid('an.vo'),     'IN_PROGRESS', 40, 'Đăng album ảnh và bài highlight.', NULL),
+(3, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(-7, '12:00'), 'COMPLETED', 100, NULL, now() - interval '8 days'),
+(3, 'BACKDROP',          'Backdrop',          '400 × 250 cm',   pg_temp.vn(-6, '12:00'), 'COMPLETED', 100, NULL, now() - interval '7 days'),
+(3, 'STANDEE',           'Standee',           '80 × 180 cm',    pg_temp.vn(-6, '12:00'), 'COMPLETED', 100, NULL, now() - interval '7 days'),
+(3, 'OTHER',             'Video teaser',      '1080 × 1920 px', pg_temp.vn(-5, '12:00'), 'COMPLETED', 100, NULL, now() - interval '6 days'),
+(3, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '2 người chụp ảnh', pg_temp.vn(-4, '16:00'), 'COMPLETED', 100, NULL, now() - interval '6 days'),
+(3, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(3, '18:00'), 'IN_PROGRESS', 40, 'Đăng album ảnh và bài highlight.', NULL),
 -- Sự kiện 4 (nháp)
-(4, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(12, '12:00'), NULL, 'TODO', 0, NULL, NULL),
-(4, 'BACKDROP',          'Backdrop',          '600 × 300 cm',   pg_temp.vn(13, '12:00'), NULL, 'TODO', 0, NULL, NULL),
-(4, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '1 thợ chụp ảnh', pg_temp.vn(16, '18:00'), NULL, 'TODO', 0, NULL, NULL),
-(4, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(23, '20:00'), NULL, 'TODO', 0, NULL, NULL),
+(4, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(12, '12:00'), 'TODO', 0, NULL, NULL),
+(4, 'BACKDROP',          'Backdrop',          '600 × 300 cm',   pg_temp.vn(13, '12:00'), 'TODO', 0, NULL, NULL),
+(4, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '1 người chụp ảnh', pg_temp.vn(16, '18:00'), 'TODO', 0, NULL, NULL),
+(4, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(23, '20:00'), 'TODO', 0, NULL, NULL),
 -- Sự kiện 5 (đã hoàn thành)
-(5, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(-16, '12:00'), pg_temp.uid('bao.le'), 'COMPLETED', 100, NULL, now() - interval '17 days'),
-(5, 'STANDEE',           'Standee',           '80 × 180 cm',    pg_temp.vn(-15, '12:00'), pg_temp.uid('bao.le'), 'COMPLETED', 100, NULL, now() - interval '16 days'),
-(5, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '1 thợ chụp ảnh', pg_temp.vn(-13, '08:30'), pg_temp.uid('bao.le'), 'COMPLETED', 100, NULL, now() - interval '15 days'),
-(5, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(-6, '17:00'),  pg_temp.uid('bao.le'), 'COMPLETED', 100, NULL, now() - interval '11 days'),
+(5, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(-16, '12:00'), 'COMPLETED', 100, NULL, now() - interval '17 days'),
+(5, 'STANDEE',           'Standee',           '80 × 180 cm',    pg_temp.vn(-15, '12:00'), 'COMPLETED', 100, NULL, now() - interval '16 days'),
+(5, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '1 người chụp ảnh', pg_temp.vn(-13, '08:30'), 'COMPLETED', 100, NULL, now() - interval '15 days'),
+(5, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(-6, '17:00'), 'COMPLETED', 100, NULL, now() - interval '11 days'),
 -- Sự kiện 6
-(6, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(15, '12:00'), pg_temp.uid('bao.le'), 'TODO', 0, NULL, NULL),
-(6, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '1 thợ chụp ảnh', pg_temp.vn(20, '18:00'), pg_temp.uid('bao.le'), 'TODO', 0, NULL, NULL),
-(6, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(27, '20:30'), pg_temp.uid('bao.le'), 'TODO', 0, NULL, NULL);
+(6, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(15, '12:00'), 'TODO', 0, NULL, NULL),
+(6, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '1 người chụp ảnh', pg_temp.vn(20, '18:00'), 'TODO', 0, NULL, NULL),
+(6, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(27, '20:30'), 'TODO', 0, NULL, NULL);
+
+-- Task đã xong: ghi nhận một thành viên của nhóm là người hoàn thành (cho dữ liệu mẫu)
+UPDATE tasks t SET completed_by = (
+  SELECT m.user_id FROM event_members m WHERE m.event_id = t.event_id ORDER BY m.user_id LIMIT 1
+) WHERE t.status = 'COMPLETED';
 
 -- ---------------------------------------------------------------------
 -- 5) Một vài thông báo & hoạt động mẫu
---    (Nhắc nhở tự động hằng ngày sẽ do API sinh ra khi khởi động.)
+--    (Bản tin hằng ngày DAILY_DIGEST do API sinh ra lúc 09:00 hoặc khi khởi động.)
 -- ---------------------------------------------------------------------
 INSERT INTO notifications (recipient_id, event_id, task_id, type, title, body, sent_by, created_at, read_at) VALUES
 (pg_temp.uid('minh.tran'), 1, NULL, 'EVENT_ASSIGNED', 'Bạn được phân công sự kiện mới',
@@ -159,7 +169,7 @@ INSERT INTO notifications (recipient_id, event_id, task_id, type, title, body, s
 (pg_temp.uid('an.vo'), 1, NULL, 'EVENT_ASSIGNED', 'Bạn được phân công sự kiện mới',
   'Mai Anh đã phân công bạn vào "Ngày hội Sáng tạo CSE".', pg_temp.uid('mai.anh'), now() - interval '5 days', NULL),
 (pg_temp.uid('minh.tran'), 1, 1, 'MANUAL_REMIND', 'Nhắc việc: Banner',
-  'Mai Anh nhắc bạn hoàn thành "Banner" cho "Ngày hội Sáng tạo CSE" trước hạn.', pg_temp.uid('mai.anh'), now() - interval '3 hours', NULL);
+  'Mai Anh nhắc nhóm hoàn thành "Banner" cho "Ngày hội Sáng tạo CSE" trước hạn.', pg_temp.uid('mai.anh'), now() - interval '3 hours', NULL);
 
 INSERT INTO activity_logs (event_id, actor_id, message, created_at) VALUES
 (1, pg_temp.uid('mai.anh'), 'Mai Anh đã tạo sự kiện và phân công cho BTT.', now() - interval '5 days'),
