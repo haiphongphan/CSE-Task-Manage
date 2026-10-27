@@ -3,7 +3,9 @@
 # Cài đặt: GitHub repo -> Settings -> Secrets and variables -> Actions -> New repository secret
 #   API_URL     = https://<tên-api>.onrender.com/api
 #   CRON_SECRET = giống biến CRON_SECRET trên Render
-# Lưu ý: GitHub có thể chạy trễ vài phút so với lịch.
+# ⚠️ Lịch của GitHub KHÔNG đúng giờ (giờ cao điểm thường trễ vài giờ, có khi bỏ qua).
+#    Đây chỉ là DỰ PHÒNG. Cách chính: cron-job.org (DEPLOY.md mục 6.1).
+#    Chạy trùng không sao: DB chặn mỗi người 1 bản tin/ngày.
 name: Daily digest 09:00 (VN)
 
 on:

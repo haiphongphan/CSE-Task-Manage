@@ -202,7 +202,7 @@ Không commit file `.env` (đã có trong `.gitignore`). Mỗi app có `.env.exa
 | BTT hoàn thành task | BCH tạo sự kiện | trong app + push |
 | **09:00 mỗi ngày** | mỗi BTT còn việc | **1** thông báo trong app + **1** push + **1** email, gộp mọi task chưa xong |
 
-Bản tin 09:00 gộp mọi ấn phẩm chưa xong, việc **phân công chụp ảnh** (từ 3 ngày trước sự kiện) và **recap** (từ hôm sau sự kiện, hạn 7 ngày). Từng task được gắn cờ *Quá hạn / Trong 48 giờ / Xác nhận chụp ảnh / Cần đăng recap*. Gửi lặp lại mỗi ngày tới khi task được đánh dấu hoàn thành; DB đảm bảo mỗi người chỉ nhận 1 bản tin/ngày.
+Bản tin 09:00 gộp mọi ấn phẩm chưa xong, việc **phân công chụp ảnh** (từ 3 ngày trước sự kiện) và **recap** (ngay sau khi sự kiện kết thúc, hạn 7 ngày). Từng task được gắn cờ *Quá hạn / Trong 48 giờ / Xác nhận chụp ảnh / Cần đăng recap*. Gửi lặp lại mỗi ngày tới khi task được đánh dấu hoàn thành; DB đảm bảo mỗi người chỉ nhận 1 bản tin/ngày.
 
 **Nhận thông báo trên điện thoại:**
 - **iPhone / iPad**: mở web bằng Safari → **Chia sẻ → Thêm vào MH chính** → mở từ icon → **Bật thông báo**. Đây là Web Push, miễn phí, không cần tài khoản Apple Developer. Chi tiết: **DEPLOY.md mục 4**.

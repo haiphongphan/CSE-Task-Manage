@@ -304,7 +304,7 @@ function EventForm({ event, onSaved }: { event?: EventDetail; onSaved?: () => vo
           </View>
         )}
         <T size={11} color={colors.muted}>
-          Task chụp ảnh vào bản tin hằng ngày của BTT từ 3 ngày trước sự kiện; recap từ hôm sau sự kiện (hạn 7 ngày).
+          Task chụp ảnh vào bản tin hằng ngày của BTT từ 3 ngày trước sự kiện; recap ngay sau khi sự kiện kết thúc (hạn 7 ngày).
         </T>
       </Card>
 

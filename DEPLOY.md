@@ -202,6 +202,11 @@ Mỗi thiết bị (iPhone, iPad, máy tính) bật riêng một lần. Thiết 
 | Trang ghi "Máy chủ chưa bật Web Push" | Render chưa có `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (bước 2) |
 | Bấm **Gửi thử** báo đã gửi nhưng không thấy gì | Tắt chế độ **Tập trung / Không làm phiền**; khoá màn hình rồi đợi 10–20 giây |
 | Đổi khoá VAPID / cài lại icon | Mở app → **Cài đặt thông báo** → **Bật** lại |
+| **Gửi thử** báo "Máy chủ chưa có đăng ký của thiết bị này" | Bấm **Bật thông báo** lại (đăng ký cũ đã hết hạn hoặc bị xoá) |
+| **Gửi thử** báo "Apple/Google từ chối: 403 …" | Khoá VAPID trên Render khác với lúc đăng ký → kiểm tra lại 2 biến VAPID, rồi Tắt → Bật lại thông báo |
+| Gửi thử được nhưng không có bản tin 09:00 | Bản tin chỉ gửi cho **tài khoản BTT** có task. Đăng nhập đúng tài khoản BTT trên iPhone. Kiểm tra lịch đánh thức ở mục 6 |
+
+> **Bản tin chỉ có 1 thông báo/ngày.** "Đăng recap", "xác nhận chụp ảnh" và các ấn phẩm còn lại đều là các dòng trong cùng một thông báo *"Bạn còn N việc cần làm hôm nay"*, không có thông báo recap riêng. Recap được đưa vào bản tin **ngay khi sự kiện kết thúc**. Nếu sự kiện kết thúc sau giờ bản tin hôm đó thì recap có trong bản tin sáng hôm sau. Nếu bản tin hôm nay đã tạo nhưng lúc đó điện thoại chưa bật thông báo, lần gọi tiếp theo (job 09:00, GitHub dự phòng, hoặc Admin bấm **Gửi bản tin ngay**) sẽ **đẩy lại** với nội dung mới nhất.
 
 > Xoá icon khỏi màn hình chính = huỷ đăng ký thông báo. Lần sau API gửi sẽ nhận lỗi "hết hạn" và tự xoá đăng ký đó.
 
@@ -229,16 +234,55 @@ Email được gửi trong 2 trường hợp:
 
 ---
 
-## 6. GitHub Actions: hẹn giờ 09:00 mỗi ngày
+## 6. Hẹn giờ 09:00 mỗi ngày (đánh thức Render)
 
-File `.github/workflows/daily-digest.yml` đã có sẵn: lúc **02:00 UTC = 09:00 giờ Việt Nam**, nó đánh thức API rồi gọi `POST /api/cron/daily-digest`.
+**Vì sao cần:** Render Free cho API "ngủ" sau 15 phút không có truy cập. Lúc 09:00 server đang ngủ nên lịch `node-cron` bên trong API không chạy được. Phải có một dịch vụ bên ngoài **gọi API đúng giờ**. Khi được đánh thức sau 09:00, API cũng tự gửi bù bản tin (`DIGEST_CATCH_UP_ON_START`), nên chỉ cần đánh thức đúng giờ là đủ.
 
-1. GitHub → repo → **Settings → Secrets and variables → Actions → New repository secret**, tạo 2 secret:
-   - `API_URL` = `https://cse-task-manage-api.onrender.com/api`
-   - `CRON_SECRET` = **giống hệt** biến `CRON_SECRET` trên Render
-2. Thử ngay: tab **Actions** → *Daily digest 09:00 (VN)* → **Run workflow**. Bước "Gửi bản tin" in ra `{"recipients":…,"sent":…}` là thành công.
+> ⚠️ **Đừng dựa vào lịch của GitHub Actions.** GitHub chạy lịch theo kiểu "cố gắng": giờ cao điểm thường trễ từ vài phút tới vài giờ, có hôm bỏ luôn. Lịch `0 2 * * *` (09:00 VN) từng chạy lúc 14:03 và 14:28. Giữ GitHub làm **dự phòng** thôi.
 
-> GitHub có thể chạy trễ vài phút so với lịch, chấp nhận được với bản tin buổi sáng. Muốn đúng giờ hơn: dùng https://cron-job.org (miễn phí), tạo job `POST` tới cùng URL với header `x-cron-secret`.
+### 6.1. Cách chính: cron-job.org (miễn phí, chính xác tới phút)
+
+1. Đăng ký tại https://cron-job.org → **Settings** → đặt **Time zone = Asia/Ho_Chi_Minh**.
+2. **Create cronjob** thứ nhất (đánh thức):
+   - Title: `CSE wake` · URL: `https://cse-task-manage-api.onrender.com/api/health`
+   - Schedule: **Every day at 08:57**
+3. **Create cronjob** thứ hai (gửi bản tin):
+   - Title: `CSE digest` · URL: `https://cse-task-manage-api.onrender.com/api/cron/daily-digest`
+   - Schedule: **Every day at 09:00**
+   - Tab **Advanced**: Request method **POST**, thêm Header `x-cron-secret` = giá trị `CRON_SECRET` trên Render
+4. Bấm **Test run** ở job thứ hai: thấy `200` và `{"recipients":…,"sent":…,"resent":…}` là xong.
+
+> cron-job.org ngắt request sau 30 giây. Job 08:57 có thể báo "timeout" vì Render mất ~1 phút để khởi động. Không sao: request đó vẫn đánh thức được server, tới 09:00 server đã thức để nhận job thứ hai.
+
+### 6.2. Cách khác (chọn 1 nếu không thích cron-job.org)
+
+| Cách | Làm thế nào | Ưu / nhược |
+|---|---|---|
+| **Giữ Render luôn thức**: UptimeRobot / Better Stack | Tạo monitor HTTP tới `/api/health`, chu kỳ 5 phút | Cron bên trong API tự chạy đúng 09:00, web cũng không phải chờ khởi động. 1 service chạy cả tháng ≈ 744 giờ, vừa đủ 750 giờ free của Render. Nếu có service Render free thứ hai thì không đủ giờ |
+| **Supabase pg_cron + pg_net** | Database → Extensions bật `pg_cron`, `pg_net`, rồi chạy SQL ở dưới | Không cần thêm tài khoản. Phải lưu CRON_SECRET trong SQL của Supabase |
+| **Render trả phí** (Starter ~7 USD/tháng) | Đổi gói instance | Không ngủ nữa, chạy đúng giờ, không cần dịch vụ ngoài |
+
+SQL cho Supabase (SQL Editor). `0 2 * * *` là giờ UTC = 09:00 VN:
+
+```sql
+select cron.schedule('cse-wake', '57 1 * * *', $$
+  select net.http_get('https://cse-task-manage-api.onrender.com/api/health', timeout_milliseconds := 60000)
+$$);
+select cron.schedule('cse-digest', '0 2 * * *', $$
+  select net.http_post(
+    url := 'https://cse-task-manage-api.onrender.com/api/cron/daily-digest',
+    headers := '{"x-cron-secret": "<CRON_SECRET>", "Content-Type": "application/json"}'::jsonb,
+    timeout_milliseconds := 60000)
+$$);
+-- Xem kết quả: select * from cron.job_run_details order by start_time desc limit 5;
+```
+
+### 6.3. GitHub Actions (dự phòng)
+
+File `.github/workflows/daily-digest.yml` vẫn giữ. Nếu cách chính lỡ hẹn, GitHub chạy trễ vẫn gửi bù được. Nếu bản tin đã gửi rồi thì không có tin trùng, vì DB chặn mỗi người 1 bản tin/ngày.
+
+1. GitHub → repo → **Settings → Secrets and variables → Actions**, tạo `API_URL` = `https://cse-task-manage-api.onrender.com/api` và `CRON_SECRET` (giống Render).
+2. Tab **Actions** → *Daily digest* → **Run workflow** để thử.
 
 ---
 

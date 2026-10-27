@@ -23,6 +23,11 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     });
   }
 
+  // Thân request vượt giới hạn của express.json / express.raw (VD file đính kèm > 10 MB)
+  if ((err as { type?: string })?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'File hoặc dữ liệu gửi lên quá lớn' });
+  }
+
   // Lỗi từ Prisma/PostgreSQL
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (err.code === 'P2002') {

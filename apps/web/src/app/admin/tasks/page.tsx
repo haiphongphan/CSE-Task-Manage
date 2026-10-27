@@ -49,11 +49,14 @@ export default function AdminTasksPage() {
   }
 
   async function runDigest() {
-    const r = await api<{ recipients: number; sent: number }>('/admin/run-digest', { method: 'POST' });
+    const r = await api<{ recipients: number; sent: number; resent: number }>('/admin/run-digest', { method: 'POST' });
+    const parts: string[] = [];
+    if (r.sent) parts.push(`đã gửi bản tin mới cho ${r.sent} thành viên BTT`);
+    if (r.resent) parts.push(`đã đẩy lại cho ${r.resent} người trước đó chưa nhận được trên điện thoại`);
     setNotice(
-      r.sent
-        ? `Đã gửi bản tin hằng ngày (push + email) cho ${r.sent} thành viên BTT.`
-        : `${r.recipients} BTT có task cần làm, nhưng bản tin hôm nay đã được gửi trước đó nên không gửi lại.`,
+      parts.length
+        ? `Bản tin hằng ngày: ${parts.join('; ')}.`
+        : `${r.recipients} BTT có task cần làm; bản tin hôm nay đều đã tới thiết bị (hoặc người nhận chưa bật thông báo) nên không gửi lại.`,
     );
   }
 

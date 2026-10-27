@@ -5,7 +5,7 @@
 // Task được đưa vào bản tin ("task cần chú ý"):
 //  * Ấn phẩm media chưa hoàn thành (banner, backdrop...).
 //  * Phân công chụp ảnh: chỉ từ 3 ngày trước ngày sự kiện trở đi.
-//  * Recap sự kiện: chỉ từ ngày hôm sau ngày sự kiện trở đi.
+//  * Recap sự kiện: ngay khi sự kiện kết thúc trở đi.
 // Mỗi BTT nhận task của MỌI sự kiện mình phụ trách (task giao cho cả nhóm).
 // Chạy lại nhiều lần trong ngày vẫn an toàn: DB chặn trùng theo
 // (người nhận, DAILY_DIGEST, ngày).
@@ -15,7 +15,7 @@ import { prisma } from '../prisma';
 import { addDays, vnDateOnly, vnDayDiff, vnHour } from '../lib/time';
 import { TASK_STATUS_LABEL } from '../lib/labels';
 import { digestEmail, type DigestEvent, type DigestTask } from '../email/templates';
-import { notify } from './notify';
+import { notify, redeliverDigest, type NotifyInput } from './notify';
 
 type Flag = DigestTask['flag'];
 
@@ -29,7 +29,7 @@ export function reminderFlag(
     return vnDayDiff(now, event.startsAt) <= config.photoReminderDaysBefore ? 'PHOTO' : undefined;
   }
   if (task.type === 'RECAP') {
-    return vnDayDiff(event.endsAt, now) >= 1 ? 'RECAP' : undefined;
+    return now >= event.endsAt ? 'RECAP' : undefined; // sự kiện đã kết thúc
   }
   if (task.deadline < now) return 'OVERDUE';
   if (task.deadline <= addDays(now, 2)) return 'SOON';
@@ -76,6 +76,7 @@ function summarize(events: DigestEvent[]) {
 export interface DigestRunResult {
   recipients: number; // số BTT có task cần chú ý
   sent: number; // số bản tin MỚI tạo (đã gửi hôm nay thì không tính lại)
+  resent: number; // bản tin hôm nay trước đó chưa tới được thiết bị nào, nay đã đẩy lại
 }
 
 export async function runDailyDigest(now = new Date()): Promise<DigestRunResult> {
@@ -87,6 +88,7 @@ export async function runDailyDigest(now = new Date()): Promise<DigestRunResult>
 
   let recipients = 0;
   let sent = 0;
+  let resent = 0;
   for (const u of btts) {
     const events = await collectForUser(u.id, now);
     const total = events.reduce((s, e) => s + e.tasks.length, 0);
@@ -94,7 +96,7 @@ export async function runDailyDigest(now = new Date()): Promise<DigestRunResult>
     recipients++;
 
     const summary = summarize(events);
-    sent += await notify({
+    const input: NotifyInput = {
       recipientIds: [u.id],
       type: 'DAILY_DIGEST',
       title: `Bạn còn ${total} việc cần làm hôm nay`,
@@ -102,11 +104,16 @@ export async function runDailyDigest(now = new Date()): Promise<DigestRunResult>
       reminderDate: today,
       pushData: { screen: 'reminders' },
       email: digestEmail(u.fullName, events, summary),
-    });
+    };
+    const created = await notify(input);
+    sent += created;
+    // Đã có bản tin hôm nay nhưng lúc đó chưa đẩy được (VD chưa bật thông báo)
+    // -> cập nhật nội dung mới nhất và đẩy lại.
+    if (!created) resent += await redeliverDigest(input);
   }
 
-  console.log(`[digest] ${new Date().toISOString()} — ${recipients} BTT có việc, ${sent} bản tin mới`);
-  return { recipients, sent };
+  console.log(`[digest] ${new Date().toISOString()} — ${recipients} BTT có việc, ${sent} bản tin mới, ${resent} gửi lại`);
+  return { recipients, sent, resent };
 }
 
 /**

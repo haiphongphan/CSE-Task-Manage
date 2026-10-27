@@ -6,6 +6,7 @@ import { config } from './config';
 import { authRouter } from './routes/auth';
 import { usersRouter } from './routes/users';
 import { eventsRouter } from './routes/events';
+import { attachmentsRouter } from './routes/attachments';
 import { tasksRouter } from './routes/tasks';
 import { notificationsRouter } from './routes/notifications';
 import { cronRouter } from './routes/cron';
@@ -24,6 +25,7 @@ export function createApp() {
 
   app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);
+  app.use('/api/events/:eventId/attachments', attachmentsRouter); // trước eventsRouter: nhận body là file thô
   app.use('/api/events', eventsRouter);
   app.use('/api/tasks', tasksRouter);
   app.use('/api/cron', cronRouter); // đặt TRƯỚC notificationsRouter (router đó yêu cầu đăng nhập)

@@ -153,7 +153,16 @@ export function PushSettingsCard() {
                 onClick={() =>
                   run(async () => {
                     const r = await sendTestPush();
-                    setMsg({ ok: r.sent > 0, text: r.sent > 0 ? `Đã gửi thử tới ${r.sent} thiết bị. Kiểm tra màn hình khoá nhé!` : 'Chưa gửi được, thử bật lại thông báo.' });
+                    if (r.sent > 0) {
+                      setMsg({ ok: true, text: `Máy chủ đã gửi tới ${r.sent}/${r.devices} thiết bị. Khoá màn hình và đợi 10–20 giây nhé!` });
+                    } else if (r.devices === 0 || r.expired > 0) {
+                      // Máy chủ không còn đăng ký của thiết bị này -> đăng ký lại
+                      await disablePush().catch(() => {});
+                      refresh();
+                      setMsg({ ok: false, text: 'Máy chủ chưa có đăng ký của thiết bị này (hoặc đã hết hạn). Bấm "Bật thông báo" lại.' });
+                    } else {
+                      setMsg({ ok: false, text: `Apple/Google từ chối: ${r.errors.join('; ') || 'không rõ lỗi'}` });
+                    }
                   })
                 }
               >

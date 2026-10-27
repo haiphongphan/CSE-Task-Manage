@@ -18,6 +18,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ---------- Dọn dẹp (thứ tự ngược với phụ thuộc) ----------
+DROP TABLE IF EXISTS event_attachments CASCADE;
 DROP TABLE IF EXISTS activity_logs   CASCADE;
 DROP TABLE IF EXISTS notifications   CASCADE;
 DROP TABLE IF EXISTS web_push_subscriptions CASCADE;
@@ -241,6 +242,24 @@ CREATE TABLE activity_logs (
 CREATE INDEX idx_activity_event ON activity_logs(event_id, created_at DESC);
 
 -- =====================================================================
+-- event_attachments: file mẫu / tham chiếu cho ấn phẩm (mục 03 của form)
+-- Lưu thẳng nội dung file vào DB (bytea) vì API chạy trên Render không có
+-- ổ đĩa lâu dài — file ghi ra đĩa sẽ mất mỗi lần deploy/khởi động lại.
+-- Giới hạn kích thước/định dạng kiểm tra ở API (routes/attachments.ts).
+-- =====================================================================
+CREATE TABLE event_attachments (
+  id          integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  event_id    integer      NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  file_name   varchar(255) NOT NULL,
+  mime_type   varchar(100) NOT NULL,
+  size_bytes  integer      NOT NULL CHECK (size_bytes > 0),
+  data        bytea        NOT NULL,
+  uploaded_by integer      REFERENCES users(id) ON DELETE SET NULL,
+  created_at  timestamptz  NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_event_attachments_event ON event_attachments(event_id);
+
+-- =====================================================================
 -- Row Level Security (RLS)
 -- ---------------------------------------------------------------------
 -- Supabase tự mở schema "public" ra REST API công khai (khoá anon).
@@ -256,5 +275,6 @@ ALTER TABLE push_tokens    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE web_push_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_logs  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_attachments ENABLE ROW LEVEL SECURITY;
 
 COMMIT;

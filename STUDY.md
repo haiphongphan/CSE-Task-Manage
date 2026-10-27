@@ -41,7 +41,7 @@ Task **không giao cho từng người**: BCH chọn nhóm BTT phụ trách sự
 
 **Bản tin 09:00 mỗi ngày** gửi cho mỗi BTT còn việc: **1** thông báo trên điện thoại + **1** email, gộp mọi task chưa xong, cho tới khi task được đánh dấu hoàn thành. Trong đó:
 - **Phân công chụp ảnh**: chỉ đưa vào từ 3 ngày trước sự kiện.
-- **Recap sự kiện**: chỉ đưa vào từ ngày hôm sau sự kiện (hạn recap = kết thúc + 7 ngày).
+- **Recap sự kiện**: đưa vào ngay khi sự kiện kết thúc (hạn recap = kết thúc + 7 ngày).
 
 ### 1.2. Kiến trúc 3 tầng
 
@@ -507,7 +507,7 @@ Mỗi sáng 09:00, với **từng BTT** có sự kiện đang thực hiện, job
 | Task | Đưa vào bản tin khi | Cờ |
 |---|---|---|
 | Phân công chụp ảnh | hôm nay ≥ ngày sự kiện − 3 | `PHOTO` (Xác nhận chụp ảnh) |
-| Recap sự kiện | hôm nay ≥ ngày sau ngày kết thúc | `RECAP` (Cần đăng recap) |
+| Recap sự kiện | sự kiện đã kết thúc (now ≥ ends_at) | `RECAP` (Cần đăng recap) |
 | Ấn phẩm đã quá hạn | luôn | `OVERDUE` |
 | Ấn phẩm hạn trong 48 giờ | luôn | `SOON` |
 | Ấn phẩm còn xa hạn | luôn (không gắn cờ) | — |
@@ -805,3 +805,31 @@ Hai điểm cần hiểu:
 - **Smoke test:** 35/35.
 
 > 📌 **Bài học kiến trúc:** nhờ mọi thông báo đều đi qua một hàm `notify()` (mục 7.2), thêm cả một kênh mới (Web Push) **không phải sửa** logic bản tin, nhắc việc hay phân công.
+
+---
+
+## 16. Vòng 4 — Sự cố sau deploy: bản tin tới lúc 14:28, không thấy "đăng recap"
+
+### 16.1. Bản tin tới trễ 5 tiếng: lỗi ở lịch của GitHub
+- Lịch `schedule` của GitHub Actions chạy theo kiểu **best-effort**. Giờ cao điểm (nhất là phút 0 của mỗi giờ), job bị xếp hàng, thường trễ từ vài phút tới vài giờ, có hôm bị bỏ qua. Lịch `0 2 * * *` chạy thực tế lúc 07:03 và 07:28 UTC.
+- Render Free đang ngủ lúc 09:00 nên `node-cron` trong API không chạy. Khi GitHub đánh thức lúc 14:28, `catchUpDigest()` thấy đã quá 09:00 nên gửi bù luôn. Vì vậy giờ gửi trùng với giờ GitHub chạy.
+- **Bài học:** muốn đúng giờ thì cần một bộ hẹn giờ có cam kết về độ chính xác, như cron-job.org hoặc pg_cron của Supabase, hoặc giữ server luôn thức. Hệ thống được thiết kế **idempotent** (chạy nhiều lần cũng không sao, nhờ unique index), nên có thể dùng **nhiều bộ hẹn giờ cùng lúc**: một cái chính, một cái dự phòng.
+
+### 16.2. "Không nhận được thông báo đăng recap"
+Có 3 nguyên nhân cộng lại:
+1. Recap **không phải thông báo riêng**. Nó là một dòng trong bản tin gộp ("… · đăng recap: <sự kiện>").
+2. Trước đây recap chỉ vào bản tin **từ ngày hôm sau** sự kiện. Đã đổi thành **ngay khi sự kiện kết thúc** (`now >= endsAt`), đúng yêu cầu ban đầu.
+3. Mỗi người chỉ có 1 bản tin/ngày. Nếu bản tin được tạo khi điện thoại chưa bật thông báo, nó nằm trong hộp thư app nhưng không bao giờ được đẩy lên điện thoại. Cách sửa: `redeliverDigest()`. Lần chạy sau, bản tin hôm nay có `push_sent_at IS NULL` sẽ được cập nhật nội dung mới nhất rồi đẩy lại. Email chỉ gửi nếu chưa gửi (`email_sent_at`).
+
+### 16.3. Chẩn đoán push tốt hơn
+`sendWebPush()` giờ trả thêm `errors` (mã HTTP + nội dung lỗi từ máy chủ push của Apple/Google). Nút **Gửi thử** hiện lý do cụ thể:
+- Không có đăng ký trên máy chủ → tự gỡ ở trình duyệt, nhắc bấm **Bật** lại.
+- `403` → thường do khoá VAPID khác với lúc đăng ký.
+- `410` → đăng ký hết hạn (đã gỡ icon).
+
+Cách kiểm tra trên Supabase (SQL Editor):
+```sql
+select u.username, count(w.*) as thiet_bi from users u left join web_push_subscriptions w on w.user_id = u.id group by 1;
+select recipient_id, title, body, created_at, push_sent_at, email_sent_at from notifications
+where type = 'DAILY_DIGEST' order by created_at desc limit 10;
+```

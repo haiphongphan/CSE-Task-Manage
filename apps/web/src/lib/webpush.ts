@@ -107,4 +107,4 @@ export async function disablePush() {
 }
 
 /** Gửi thử một thông báo tới mọi thiết bị đã bật của mình */
-export const sendTestPush = () => api<{ devices: number; sent: number }>('/push/web/test', { method: 'POST' });
+export const sendTestPush = () => api<{ devices: number; sent: number; expired: number; errors: string[] }>('/push/web/test', { method: 'POST' });

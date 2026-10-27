@@ -1,7 +1,7 @@
 // "Presenter": chuyển bản ghi DB -> JSON gửi cho client.
 // Đặt ở một chỗ để web và mobile luôn nhận cùng một định dạng,
 // và để thêm các trường TÍNH TOÁN (quá hạn, % tiến độ...) không lưu trong DB.
-import type { Event, EventMember, Task, User } from '../generated/prisma/client';
+import type { Event, EventAttachment, EventMember, Task, User } from '../generated/prisma/client';
 
 type PublicUserInput = Pick<User, 'id' | 'fullName' | 'username' | 'email' | 'role'> &
   Partial<Pick<User, 'createdAt' | 'mustChangePassword'>>;
@@ -60,6 +60,7 @@ export type EventWithRelations = Event & {
   tasks?: TaskWithRelations[];
   members?: (EventMember & { user: MiniUser })[];
   createdBy?: MiniUser;
+  attachments?: Pick<EventAttachment, 'id' | 'fileName' | 'mimeType' | 'sizeBytes' | 'createdAt'>[];
 };
 
 export function presentEventSummary(e: EventWithRelations, now = new Date()) {
@@ -111,5 +112,6 @@ export function presentEventDetail(e: EventWithRelations, now = new Date()) {
     offlineContent: e.offlineContent,
     publishedAt: e.publishedAt,
     tasks: (e.tasks ?? []).map((t) => presentTask(t, now)),
+    attachments: e.attachments ?? [],
   };
 }

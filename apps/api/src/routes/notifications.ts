@@ -182,7 +182,12 @@ notificationsRouter.post('/push/web/test', async (req, res) => {
     tag: 'test',
   });
   if (r.expired.length) await prisma.webPushSubscription.deleteMany({ where: { endpoint: { in: r.expired } } });
-  res.json({ devices: subs.length, sent: r.sent });
+  res.json({
+    devices: subs.length,
+    sent: r.sent,
+    expired: r.expired.length, // thiết bị đã gỡ icon / tắt thông báo -> đã xoá
+    errors: r.errors.map((e) => `${e.status ?? ''} ${e.message}`.trim()),
+  });
 });
 
 // ---------------------------------------------------------------------

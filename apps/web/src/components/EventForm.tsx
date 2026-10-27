@@ -356,7 +356,7 @@ export function EventForm({ event }: { event?: EventDetail }) {
               </div>
             )}
             <p className="text-[11px] text-muted">
-              Từ 3 ngày trước sự kiện, task chụp ảnh được đưa vào bản tin nhắc việc hằng ngày của BTT cho tới khi đánh dấu hoàn thành. Recap được nhắc từ hôm sau sự kiện (hạn 7 ngày).
+              Từ 3 ngày trước sự kiện, task chụp ảnh được đưa vào bản tin nhắc việc hằng ngày của BTT cho tới khi đánh dấu hoàn thành. Recap được nhắc ngay sau khi sự kiện kết thúc (hạn 7 ngày).
             </p>
           </section>
 

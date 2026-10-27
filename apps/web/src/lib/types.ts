@@ -77,12 +77,22 @@ export interface EventSummary {
   updatedAt: string;
 }
 
+/** File mẫu / tham chiếu cho ấn phẩm (chỉ thông tin, nội dung tải riêng) */
+export interface Attachment {
+  id: number;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
 export interface EventDetail extends EventSummary {
   notes: string | null;
   onlineContent: string | null;
   offlineContent: string | null;
   publishedAt: string | null;
   tasks: Task[];
+  attachments: Attachment[];
   permissions: {
     canEdit: boolean;
     canRemind: boolean;

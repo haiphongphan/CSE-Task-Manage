@@ -260,7 +260,7 @@ export default function EventDetailPage() {
               )}
               <div className="h-px bg-divider" />
               <p className="text-[11px] text-muted">
-                09:00 mỗi ngày, mỗi BTT nhận một bản tin gộp mọi task còn lại (điện thoại + email): chụp ảnh từ 3 ngày trước sự kiện, recap từ hôm sau sự kiện. Bấm “Nhắc” ở từng task để nhắc cả nhóm ngay.
+                09:00 mỗi ngày, mỗi BTT nhận một bản tin gộp mọi task còn lại (điện thoại + email): chụp ảnh từ 3 ngày trước sự kiện, recap ngay sau khi sự kiện kết thúc. Bấm “Nhắc” ở từng task để nhắc cả nhóm ngay.
               </p>
             </div>
           )}

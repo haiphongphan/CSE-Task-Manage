@@ -58,6 +58,25 @@ export async function notify(input: NotifyInput): Promise<number> {
   return created.length;
 }
 
+/**
+ * Bản tin hằng ngày đã tạo hôm nay nhưng CHƯA đẩy được tới thiết bị nào
+ * (lúc tạo người nhận chưa bật thông báo, hoặc Apple/Google báo lỗi).
+ * Lần chạy sau sẽ cập nhật nội dung mới nhất rồi đẩy lại. Trả về số đã đẩy được.
+ */
+export async function redeliverDigest(input: NotifyInput): Promise<number> {
+  if (!input.reminderDate) return 0;
+  const pending = await prisma.notification.findMany({
+    where: { recipientId: { in: input.recipientIds }, type: input.type, reminderDate: input.reminderDate, pushSentAt: null },
+    select: { id: true, emailSentAt: true },
+  });
+  if (pending.length === 0) return 0;
+  const ids = pending.map((n) => n.id);
+  await prisma.notification.updateMany({ where: { id: { in: ids } }, data: { title: input.title, body: input.body } });
+  // Email đã gửi rồi thì không gửi lại
+  await deliver(ids, { ...input, email: pending.every((n) => n.emailSentAt) ? undefined : input.email });
+  return prisma.notification.count({ where: { id: { in: ids }, pushSentAt: { not: null } } });
+}
+
 /** Đẩy push / gửi email cho các thông báo vừa tạo, ghi lại thời điểm đã gửi */
 async function deliver(notificationIds: number[], input: NotifyInput) {
   const notifications = await prisma.notification.findMany({
@@ -110,7 +129,7 @@ async function deliver(notificationIds: number[], input: NotifyInput) {
     }
     if (pushed) await prisma.notification.update({ where: { id: n.id }, data: { pushSentAt: new Date() } });
 
-    if (input.email && (await mailer.send({ to: n.recipient.email, ...input.email }))) {
+    if (input.email && !n.emailSentAt && (await mailer.send({ to: n.recipient.email, ...input.email }))) {
       await prisma.notification.update({ where: { id: n.id }, data: { emailSentAt: new Date() } });
     }
   }

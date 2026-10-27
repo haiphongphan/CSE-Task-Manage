@@ -41,6 +41,7 @@ model User {
   pushTokens             PushToken[]
   webPushSubscriptions   WebPushSubscription[]
   completedTasks         Task[]         @relation("TaskCompletedBy")
+  uploadedAttachments    EventAttachment[]
 
   @@map("users")
 }
@@ -63,6 +64,7 @@ model Event {
   updatedAt            DateTime    @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   activityLogs  ActivityLog[]
+  attachments   EventAttachment[]
   members       EventMember[]
   createdBy     User           @relation(fields: [createdById], references: [id], onUpdate: NoAction)
   notifications Notification[]
@@ -107,6 +109,22 @@ model Task {
 
   @@index([eventId], map: "idx_tasks_event")
   @@map("tasks")
+}
+
+model EventAttachment {
+  id           Int      @id @default(autoincrement())
+  eventId      Int      @map("event_id")
+  fileName     String   @map("file_name") @db.VarChar(255)
+  mimeType     String   @map("mime_type") @db.VarChar(100)
+  sizeBytes    Int      @map("size_bytes")
+  data         Bytes
+  uploadedById Int?     @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onUpdate: NoAction)
+
+  @@index([eventId], map: "idx_event_attachments_event")
+  @@map("event_attachments")
 }
 
 model PushToken {

@@ -11,6 +11,11 @@ export const eventDetailInclude = {
   createdBy: miniUser,
   members: { include: { user: miniUser }, orderBy: { addedAt: 'asc' } },
   tasks: { include: { completedBy: miniUser }, orderBy: [{ deadline: 'asc' }, { id: 'asc' }] },
+  // Chỉ thông tin file, KHÔNG kèm nội dung (data) — tải riêng qua /attachments/:id
+  attachments: {
+    select: { id: true, fileName: true, mimeType: true, sizeBytes: true, createdAt: true },
+    orderBy: { id: 'asc' },
+  },
 } satisfies Prisma.EventInclude;
 
 /** Điều kiện WHERE: những sự kiện user này được XEM */
