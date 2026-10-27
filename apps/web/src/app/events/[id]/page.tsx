@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  Download,
   FileText,
   ListChecks,
   MessageSquare,
@@ -28,8 +29,9 @@ import { Dropdown } from '@/components/pickers';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useAuth } from '@/lib/auth';
+import { downloadAttachment, fmtBytes } from '@/lib/attachments';
 import { fmtDate, fmtDayTime, fmtNow, fmtRange, PHASE_LABEL, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
-import type { Activity, EventDetail, Reminders, Task, TaskStatus } from '@/lib/types';
+import type { Activity, Attachment, EventDetail, Reminders, Task, TaskStatus } from '@/lib/types';
 
 /** Tiến độ gợi ý khi BTT đổi trạng thái */
 const PROGRESS_FOR: Record<TaskStatus, (cur: number) => number> = {
@@ -208,6 +210,16 @@ export default function EventDetailPage() {
               <ContentBox title="Nội dung ấn phẩm online" text={e.onlineContent} />
               <ContentBox title="Nội dung ấn phẩm in ấn" text={e.offlineContent} />
             </div>
+            {e.attachments.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <p className="text-[13px] text-navy">File mẫu / tham chiếu ({e.attachments.length})</p>
+                <ul className="grid gap-2 md:grid-cols-2">
+                  {e.attachments.map((a) => (
+                    <AttachmentRow key={a.id} eventId={e.id} att={a} setNotice={setNotice} />
+                  ))}
+                </ul>
+              </div>
+            )}
           </section>
 
           {/* Hoạt động */}
@@ -345,6 +357,37 @@ function TaskActions({ task: t, event, onChanged, setNotice }: { task: Task; eve
         </Button>
       )}
     </div>
+  );
+}
+
+function AttachmentRow({ eventId, att, setNotice }: { eventId: number; att: Attachment; setNotice: SetNotice }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <li className="flex items-center gap-3 rounded-lg bg-soft px-3 py-2">
+      <FileText className="size-4 shrink-0 text-primary" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs text-navy">{att.fileName}</p>
+        <p className="text-[11px] text-muted">{fmtBytes(att.sizeBytes)}</p>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        loading={busy}
+        icon={<Download className="size-3.5" />}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await downloadAttachment(eventId, att);
+          } catch (err) {
+            setNotice({ tone: 'error', text: (err as Error).message });
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        Tải về
+      </Button>
+    </li>
   );
 }
 

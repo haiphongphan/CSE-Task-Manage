@@ -5,14 +5,15 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { ArrowLeft, ArrowRight, CalendarDays, Camera, CheckCircle2, CheckSquare, Info, MapPin, Minus, Plus, Sparkles, Square, Trash2, Users, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CalendarDays, Camera, CheckCircle2, CheckSquare, FileText, Info, MapPin, Minus, Plus, Sparkles, Square, Trash2, Upload, Users, X } from 'lucide-react';
 import { Alert, Badge, Button, Field, Toggle, cx } from './ui';
 import { DatePicker, MemberPicker, TimePicker, formatYmd } from './pickers';
 import { api, type ApiError } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
+import { ATTACHMENT_ACCEPT, MAX_ATTACHMENT_MB, MAX_ATTACHMENTS, checkAttachment, fmtBytes, uploadAttachment } from '@/lib/attachments';
 import { FLASH_KEY } from '@/lib/flash';
 import { fromInputs, TASK_TYPE_LABEL, toDateInput, toTimeInput } from '@/lib/format';
-import type { EventDetail, MiniUser } from '@/lib/types';
+import type { Attachment, EventDetail, MiniUser } from '@/lib/types';
 
 const DELIVERABLES = ['BANNER', 'BACKDROP', 'BANDROLL', 'STANDEE', 'INVITATION_LETTER', 'OTHER'] as const;
 type DeliverableType = (typeof DELIVERABLES)[number];
@@ -70,6 +71,12 @@ export function EventForm({ event }: { event?: EventDetail }) {
   const [deliverables, setDeliverables] = useState(() => initialDeliverables(event));
   const [photo, setPhoto] = useState({ needed: event?.photographerNeeded ?? true, quantity: event?.photographerQuantity || 1 });
   const [memberIds, setMemberIds] = useState<number[]>(event?.members.map((m) => m.id) ?? []);
+  // File mẫu/tham chiếu (mục 03): file mới chỉ tải lên SAU khi lưu sự kiện (lúc tạo mới chưa có id)
+  const [savedFiles, setSavedFiles] = useState<Attachment[]>(event?.attachments ?? []);
+  const [removedFileIds, setRemovedFileIds] = useState<number[]>([]);
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [fileErrors, setFileErrors] = useState<string[]>([]);
+  const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState<'draft' | 'publish' | null>(null);
 
@@ -77,6 +84,7 @@ export function EventForm({ event }: { event?: EventDetail }) {
   const members = btts.filter((u) => memberIds.includes(u.id));
   const taskCount = selectedTypes.length + (photo.needed ? 1 : 0) + 1; // +1 recap
   const today = toDateInput(new Date().toISOString());
+  const fileCount = savedFiles.length + newFiles.length;
 
   const setI = (k: keyof typeof info) => (v: string) => setInfo({ ...info, [k]: v });
 
@@ -90,6 +98,37 @@ export function EventForm({ event }: { event?: EventDetail }) {
   }
   const updateDeliverable = (type: DeliverableType, patch: Partial<DeliverableState>) =>
     setDeliverables((cur) => ({ ...cur, [type]: { ...cur[type]!, ...patch } }));
+
+  function addFiles(list: FileList | null) {
+    if (!list) return;
+    const errs: string[] = [];
+    const accepted: File[] = [];
+    for (const f of Array.from(list)) {
+      const err = checkAttachment(f);
+      if (err) errs.push(err);
+      else if (fileCount + accepted.length >= MAX_ATTACHMENTS) errs.push(`Tối đa ${MAX_ATTACHMENTS} file — bỏ qua “${f.name}”`);
+      else accepted.push(f);
+    }
+    setFileErrors(errs);
+    setNewFiles((cur) => [...cur, ...accepted]);
+  }
+
+  function removeSavedFile(id: number) {
+    setSavedFiles((cur) => cur.filter((f) => f.id !== id));
+    setRemovedFileIds((cur) => [...cur, id]);
+  }
+
+  /** Đồng bộ file sau khi sự kiện đã lưu. Trả về tên các file lỗi (sự kiện vẫn được lưu) */
+  async function syncFiles(eventId: number) {
+    const failed: string[] = [];
+    for (const id of removedFileIds) {
+      await api(`/events/${eventId}/attachments/${id}`, { method: 'DELETE' }).catch(() => undefined);
+    }
+    for (const f of newFiles) {
+      await uploadAttachment(eventId, f).catch(() => failed.push(f.name));
+    }
+    return failed;
+  }
 
   /** Kiểm tra phía trình duyệt cho phản hồi nhanh — API vẫn kiểm tra lại */
   function validate(publish: boolean) {
@@ -144,10 +183,13 @@ export function EventForm({ event }: { event?: EventDetail }) {
         method: isEdit ? 'PUT' : 'POST',
         body,
       });
+      const failedFiles = await syncFiles(res.event.id);
       const title = publish ? (isEdit && !isDraft ? 'Đã lưu thay đổi' : 'Đã tạo sự kiện và phân công cho BTT') : 'Đã lưu bản nháp';
-      const detail = publish
-        ? `${res.event.name} đã có trong danh sách. ${members.length} thành viên BTT đã được thông báo.`
-        : `${res.event.name} chỉ mình bạn thấy cho tới khi gửi.`;
+      const detail =
+        (publish
+          ? `${res.event.name} đã có trong danh sách. ${members.length} thành viên BTT đã được thông báo.`
+          : `${res.event.name} chỉ mình bạn thấy cho tới khi gửi.`) +
+        (failedFiles.length ? ` Chưa tải lên được: ${failedFiles.join(', ')} — mở “Sửa” để thử lại.` : '');
       sessionStorage.setItem(FLASH_KEY, `${title}|${detail}`);
       router.push('/bch/events');
     } catch (err) {
@@ -326,6 +368,59 @@ export function EventForm({ event }: { event?: EventDetail }) {
                 <textarea className="input min-h-[110px]" value={info.offlineContent} onChange={(e) => setI('offlineContent')(e.target.value)} />
               </Field>
             </div>
+            <Field
+              custom
+              label="File mẫu / tham chiếu (tuỳ chọn)"
+              hint={`PDF, ảnh (PNG, JPG, WEBP, SVG…), AI, PSD, Word, PowerPoint, Excel, ZIP · tối đa ${MAX_ATTACHMENT_MB} MB/file, ${MAX_ATTACHMENTS} file.`}
+            >
+              <label
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  addFiles(e.dataTransfer.files);
+                }}
+                className={cx(
+                  'flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed px-4 py-6 text-center transition',
+                  dragOver ? 'border-primary bg-ice' : 'border-line bg-soft hover:bg-ice',
+                )}
+              >
+                <Upload className="size-5 text-primary" />
+                <span className="text-xs text-navy">Kéo thả file vào đây hoặc bấm để chọn</span>
+                <span className="text-[11px] text-muted">Có thể chọn nhiều file cùng lúc</span>
+                <input
+                  type="file"
+                  multiple
+                  accept={ATTACHMENT_ACCEPT}
+                  className="sr-only"
+                  onChange={(e) => {
+                    addFiles(e.target.files);
+                    e.target.value = ''; // cho phép chọn lại cùng file
+                  }}
+                />
+              </label>
+            </Field>
+            {fileErrors.length > 0 && (
+              <ul className="flex flex-col gap-0.5 text-[11px] text-danger">
+                {fileErrors.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            )}
+            {fileCount > 0 && (
+              <ul className="flex flex-col gap-2">
+                {savedFiles.map((f) => (
+                  <FileRow key={`s${f.id}`} name={f.fileName} size={f.sizeBytes} onRemove={() => removeSavedFile(f.id)} />
+                ))}
+                {newFiles.map((f, i) => (
+                  <FileRow key={`n${i}-${f.name}`} name={f.name} size={f.size} pending onRemove={() => setNewFiles((cur) => cur.filter((_, j) => j !== i))} />
+                ))}
+              </ul>
+            )}
           </section>
 
           {/* 04 */}
@@ -394,6 +489,7 @@ export function EventForm({ event }: { event?: EventDetail }) {
             <div className="h-px bg-divider" />
             <Row label="Ấn phẩm media" value={selectedTypes.length} />
             <Row label="Người chụp ảnh" value={photo.needed ? photo.quantity : 0} />
+            <Row label="File tham chiếu" value={fileCount} />
             <Row label="BTT phụ trách" value={memberIds.length} />
             {members.length > 0 && (
               <div className="flex flex-wrap gap-1">
@@ -440,5 +536,23 @@ function Row({ label, value }: { label: string; value: number }) {
       <span>{label}</span>
       <span className="text-sm text-navy">{value}</span>
     </div>
+  );
+}
+
+function FileRow({ name, size, pending, onRemove }: { name: string; size: number; pending?: boolean; onRemove: () => void }) {
+  return (
+    <li className="flex items-center gap-3 rounded-lg border border-line bg-white px-3 py-2">
+      <FileText className="size-4 shrink-0 text-primary" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs text-navy">{name}</p>
+        <p className="text-[11px] text-muted">
+          {fmtBytes(size)}
+          {pending && ' · tải lên khi lưu'}
+        </p>
+      </div>
+      <button type="button" onClick={onRemove} aria-label={`Bỏ ${name}`} className="rounded p-1 hover:bg-soft">
+        <X className="size-4 text-primary" />
+      </button>
+    </li>
   );
 }
