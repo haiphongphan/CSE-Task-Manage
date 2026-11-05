@@ -183,6 +183,20 @@ async function main() {
   r = await call('PUT', '/events/3', bch, payload);
   check('BCH không sửa được sự kiện đã diễn ra', r.status === 403, r.json);
 
+  // --- Admin: sửa sự kiện như BCH ---
+  r = await call('PUT', `/events/${ev.id}`, admin, {
+    ...payload,
+    name: 'Sự kiện kiểm thử (Admin sửa)',
+    deliverables: [{ id: banner.id, type: 'BANNER', dimensions: '1200 × 628 px', deadline: banner.deadline }],
+  });
+  check('Admin sửa sự kiện của BCH', r.status === 200 && r.json.event.name === 'Sự kiện kiểm thử (Admin sửa)', r.json);
+  r = await call('GET', '/events/3', admin);
+  check('Admin vẫn được sửa sự kiện đã diễn ra', r.status === 200 && r.json.event.permissions.canEdit === true, r.json);
+  r = await call('GET', `/events/${ev.id}`, bch);
+  check('BCH thấy thay đổi của Admin', r.json.event.name === 'Sự kiện kiểm thử (Admin sửa)', r.json);
+  r = await call('PUT', `/events/${ev.id}`, btt, payload);
+  check('BTT không sửa được sự kiện', r.status === 403, r.json);
+
   // --- Admin: task ---
   r = await call('GET', '/tasks?status=OVERDUE', admin);
   check('Admin lọc task quá hạn', r.status === 200 && r.json.items.every((t: any) => t.isOverdue), r.json);

@@ -10,6 +10,7 @@ import { Alert, Badge, Button, Field, Toggle, cx } from './ui';
 import { DatePicker, MemberPicker, TimePicker, formatYmd } from './pickers';
 import { api, type ApiError } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
+import { useAuth } from '@/lib/auth';
 import { ATTACHMENT_ACCEPT, MAX_ATTACHMENT_MB, MAX_ATTACHMENTS, checkAttachment, fmtBytes, uploadAttachment } from '@/lib/attachments';
 import { FLASH_KEY } from '@/lib/flash';
 import { fromInputs, TASK_TYPE_LABEL, toDateInput, toTimeInput } from '@/lib/format';
@@ -84,6 +85,10 @@ const dayBefore = (date: string) => {
 
 export function EventForm({ event }: { event?: EventDetail }) {
   const router = useRouter();
+  const { user } = useAuth();
+  // Admin dùng chung form này để sửa sự kiện của BCH; lưu xong quay về trang Quản lý sự kiện
+  const isAdmin = user?.role === 'ADMIN';
+  const listHref = isAdmin ? '/admin/events' : '/bch/events';
   const isEdit = !!event;
   const isDraft = !event || event.status === 'DRAFT';
   const { data: bttData } = useApi<{ items: (MiniUser & { username: string })[] }>('/users/options?role=BTT');
@@ -265,7 +270,7 @@ export function EventForm({ event }: { event?: EventDetail }) {
           : `${res.event.name} chỉ mình bạn thấy cho tới khi gửi.`) +
         (failedFiles.length ? ` Chưa tải lên được: ${failedFiles.join(', ')} — mở “Sửa” để thử lại.` : '');
       sessionStorage.setItem(FLASH_KEY, `${title}|${detail}`);
-      router.push('/bch/events');
+      router.push(listHref);
     } catch (err) {
       const e2 = err as ApiError;
       setErrors(e2.details?.map((d) => d.message) ?? [e2.message]);
@@ -278,7 +283,7 @@ export function EventForm({ event }: { event?: EventDetail }) {
   async function removeDraft() {
     if (!event || !confirm('Xoá bản nháp này?')) return;
     await api(`/events/${event.id}`, { method: 'DELETE' });
-    router.push('/bch/events');
+    router.push(listHref);
   }
 
   const summaryActions = (
@@ -297,15 +302,15 @@ export function EventForm({ event }: { event?: EventDetail }) {
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-3">
-        <p className="eyebrow">BCH / Ban Chấp hành</p>
+        <p className="eyebrow">{isAdmin ? `Admin / Sửa sự kiện của BCH ${event?.createdBy?.fullName ?? ''}` : 'BCH / Ban Chấp hành'}</p>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-[28px] font-bold text-navy sm:text-[32px]">{isEdit ? 'Sửa brief sự kiện' : 'Tạo brief sự kiện'}</h1>
             <p className="mt-1.5 text-sm text-muted">Biến kế hoạch sự kiện thành các task media rõ ràng, dễ theo dõi.</p>
           </div>
-          <Link href="/bch/events">
+          <Link href={listHref}>
             <Button variant="outline" icon={<ArrowLeft className="size-4" />}>
-              Về sự kiện của tôi
+              {isAdmin ? 'Về quản lý sự kiện' : 'Về sự kiện của tôi'}
             </Button>
           </Link>
         </div>

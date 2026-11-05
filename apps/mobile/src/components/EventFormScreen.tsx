@@ -7,12 +7,12 @@ import { Pressable, View } from 'react-native';
 import { DateField, MemberPicker, TimeField, formatYmd } from './pickers';
 import { Alert, Badge, Button, Card, ErrorBox, Field, Icon, Input, Loading, PageHeader, Screen, T, Toggle } from './ui';
 import { api, type ApiError } from '@/lib/api';
-import { useRoleAllowed } from '@/lib/auth';
+import { useAuth, useRoleAllowed } from '@/lib/auth';
 import { setFlash } from '@/lib/flash';
 import { useApi } from '@/lib/useApi';
 import { fromInputs, TASK_TYPE_LABEL, toDateInput, toTimeInput } from '@/lib/format';
 import { colors } from '@/lib/theme';
-import type { EventDetail, MiniUser } from '@/lib/types';
+import type { EventDetail, MiniUser, Role } from '@/lib/types';
 
 const DELIVERABLES = ['BANNER', 'BACKDROP', 'BANDROLL', 'STANDEE', 'INVITATION_LETTER', 'OTHER'] as const;
 type DType = (typeof DELIVERABLES)[number];
@@ -70,7 +70,8 @@ const dayBefore = (date: string) => {
 
 /** id có giá trị = sửa sự kiện; không có = tạo mới. onSaved: báo cho tab "Tạo sự kiện" để làm trống form */
 export function EventFormScreen({ id, onSaved }: { id?: string; onSaved?: () => void }) {
-  const ok = useRoleAllowed('BCH');
+  // Tạo mới: chỉ BCH. Sửa: BCH (sự kiện của mình, chưa diễn ra) hoặc Admin (bất kỳ lúc nào) — API trả canEdit
+  const ok = useRoleAllowed(...((id ? ['BCH', 'ADMIN'] : ['BCH']) as Role[]));
   const existing = useApi<{ event: EventDetail }>(ok && id ? `/events/${id}` : null);
   if (!ok) return <Loading />;
   if (id) {
@@ -89,6 +90,8 @@ export function EventFormScreen({ id, onSaved }: { id?: string; onSaved?: () => 
 }
 
 function EventForm({ event, onSaved }: { event?: EventDetail; onSaved?: () => void }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN'; // Admin sửa hộ sự kiện của BCH
   const isEdit = !!event;
   const isDraft = !event || event.status === 'DRAFT';
   const { data: bttData } = useApi<{ items: (MiniUser & { username: string })[] }>('/users/options?role=BTT');
@@ -217,7 +220,7 @@ function EventForm({ event, onSaved }: { event?: EventDetail; onSaved?: () => vo
       );
       onSaved?.();
       if (isEdit) router.back(); // đóng màn sửa
-      openTab('bch/events');
+      openTab(isAdmin ? 'admin/events' : 'bch/events');
     } catch (e) {
       const err = e as ApiError;
       setErrors(err.details?.map((d) => d.message) ?? [err.message]);
@@ -228,7 +231,7 @@ function EventForm({ event, onSaved }: { event?: EventDetail; onSaved?: () => vo
 
   return (
     <Screen>
-      <PageHeader eyebrow="BCH / Ban Chấp hành" title={isEdit ? 'Sửa brief sự kiện' : 'Tạo brief sự kiện'} description="Biến kế hoạch sự kiện thành các task media rõ ràng, dễ theo dõi." />
+      <PageHeader eyebrow={isAdmin ? `Admin / Sự kiện của BCH ${event?.createdBy?.fullName ?? ''}` : 'BCH / Ban Chấp hành'} title={isEdit ? 'Sửa brief sự kiện' : 'Tạo brief sự kiện'} description="Biến kế hoạch sự kiện thành các task media rõ ràng, dễ theo dõi." />
       <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
         <Badge tone="navy">{isDraft ? 'Nháp' : 'Đã gửi'}</Badge>
         <T size={11} color={colors.muted}>

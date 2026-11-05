@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { colors } from '@/lib/theme';
 import { TABS, TabActiveContext, useCurrentTab, type TabKey } from '@/lib/workspace';
 import AdminAccounts from '@/screens/AdminAccounts';
+import AdminEvents from '@/screens/AdminEvents';
 import AdminTasks from '@/screens/AdminTasks';
 import BchEvents from '@/screens/BchEvents';
 import BchNewEvent from '@/screens/BchNewEvent';
@@ -18,6 +19,7 @@ import BttReminders from '@/screens/BttReminders';
 
 const SCREENS: Record<TabKey, ComponentType> = {
   'admin/accounts': AdminAccounts,
+  'admin/events': AdminEvents,
   'admin/tasks': AdminTasks,
   'bch/new': BchNewEvent,
   'bch/events': BchEvents,

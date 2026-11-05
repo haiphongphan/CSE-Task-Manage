@@ -1,4 +1,6 @@
-// BCH · Sự kiện của tôi (Figma: "BCH event list · Mobile")
+// Danh sách sự kiện (Figma: "BCH event list · Mobile")
+//   BCH  : "Sự kiện của tôi" — chỉ sửa khi sự kiện chưa diễn ra
+//   ADMIN: "Quản lý sự kiện" — mọi sự kiện, sửa bất kỳ lúc nào (dùng qua screens/AdminEvents.tsx)
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
@@ -19,7 +21,12 @@ interface Resp {
 }
 
 export default function BchEventsScreen() {
-  const ok = useRoleAllowed('BCH');
+  return <EventsList mode="BCH" />;
+}
+
+export function EventsList({ mode }: { mode: 'BCH' | 'ADMIN' }) {
+  const isAdmin = mode === 'ADMIN';
+  const ok = useRoleAllowed(mode);
   const { user } = useAuth();
   const [status, setStatus] = useState<'' | EventStatus>('');
   const [search, setSearch] = useState('');
@@ -40,15 +47,19 @@ export default function BchEventsScreen() {
 
   return (
     <Screen onRefresh={reload}>
-      <PageHeader eyebrow="BCH / Ban Chấp hành" title="Sự kiện của tôi" description="Quản lý brief, phân công và tiến độ sự kiện." />
-      <Button title="Tạo sự kiện" icon="plus" onPress={() => setTab('bch/new')} style={{ alignSelf: 'flex-start' }} />
+      <PageHeader
+        eyebrow={isAdmin ? 'Admin / Quản trị' : 'BCH / Ban Chấp hành'}
+        title={isAdmin ? 'Quản lý sự kiện' : 'Sự kiện của tôi'}
+        description={isAdmin ? 'Xem và chỉnh sửa mọi sự kiện của các BCH.' : 'Quản lý brief, phân công và tiến độ sự kiện.'}
+      />
+      {!isAdmin && <Button title="Tạo sự kiện" icon="plus" onPress={() => setTab('bch/new')} style={{ alignSelf: 'flex-start' }} />}
       <T size={11} color={colors.muted}>
-        {user?.fullName} · Ban Chấp hành · {fmtNow()}
+        {user?.fullName} · {isAdmin ? 'Admin' : 'Ban Chấp hành'} · {fmtNow()}
       </T>
       {flash && <Alert tone="success">✓ {flash}</Alert>}
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-        <StatCard label="Sự kiện của tôi" value={s?.total ?? '–'} />
+        <StatCard label={isAdmin ? 'Tổng sự kiện' : 'Sự kiện của tôi'} value={s?.total ?? '–'} />
         <StatCard label="Nháp" value={s?.draft ?? '–'} />
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: -10 }}>
@@ -56,7 +67,7 @@ export default function BchEventsScreen() {
         <StatCard label="Hoàn thành" value={s?.completed ?? '–'} />
       </View>
 
-      <Input value={search} onChangeText={setSearch} placeholder="Tìm sự kiện của bạn" icon="search" light />
+      <Input value={search} onChangeText={setSearch} placeholder={isAdmin ? 'Tìm theo tên sự kiện' : 'Tìm sự kiện của bạn'} icon="search" light />
       <Chips
         value={status}
         onChange={setStatus}
@@ -69,7 +80,7 @@ export default function BchEventsScreen() {
       />
 
       <T size={17} weight="bold">
-        Do bạn tạo
+        {isAdmin ? 'Tất cả sự kiện' : 'Do bạn tạo'}
       </T>
       {error ? (
         <ErrorBox message={error} onRetry={reload} />
@@ -78,7 +89,7 @@ export default function BchEventsScreen() {
       ) : !data?.items.length ? (
         <Card>
           <T color={colors.muted} style={{ textAlign: 'center' }}>
-            Chưa có sự kiện nào. Bấm “Tạo sự kiện” để bắt đầu.
+            {isAdmin ? 'Chưa có sự kiện nào.' : 'Chưa có sự kiện nào. Bấm “Tạo sự kiện” để bắt đầu.'}
           </T>
         </Card>
       ) : (
@@ -93,6 +104,11 @@ export default function BchEventsScreen() {
             <T size={12} color={colors.muted}>
               {e.location} · {fmtSchedule(e.sessions)}
             </T>
+            {isAdmin && (
+              <T size={11} color={colors.primary}>
+                Tạo bởi BCH {e.createdBy?.fullName}
+              </T>
+            )}
             {e.status === 'DRAFT' ? (
               <T size={11} color={colors.muted}>
                 Đã lưu nháp · Chưa phân công BTT
@@ -112,10 +128,10 @@ export default function BchEventsScreen() {
             )}
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Button
-                title={e.editable ? 'Sửa' : 'Đã diễn ra'}
-                icon={e.editable ? 'edit' : undefined}
+                title={isAdmin || e.editable ? 'Sửa' : 'Đã diễn ra'}
+                icon={isAdmin || e.editable ? 'edit' : undefined}
                 variant="outline"
-                disabled={!e.editable}
+                disabled={!isAdmin && !e.editable}
                 style={{ flex: 1 }}
                 onPress={() => router.push(`/bch/edit/${e.id}`)}
               />

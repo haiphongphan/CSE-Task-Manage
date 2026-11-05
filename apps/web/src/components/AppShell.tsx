@@ -15,6 +15,7 @@ import { PushBanner } from './PushPrompt';
 const NAV: Record<Role, { href: string; label: string }[]> = {
   ADMIN: [
     { href: '/admin/accounts', label: 'Quản lý tài khoản' },
+    { href: '/admin/events', label: 'Quản lý sự kiện' },
     { href: '/admin/tasks', label: 'Quản lý task' },
   ],
   BCH: [

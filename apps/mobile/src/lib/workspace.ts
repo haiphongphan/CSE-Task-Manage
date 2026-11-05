@@ -10,11 +10,12 @@ import { router } from 'expo-router';
 import { createContext, useContext, useEffect, useRef, useSyncExternalStore } from 'react';
 import type { Role } from './types';
 
-export type TabKey = 'admin/accounts' | 'admin/tasks' | 'bch/new' | 'bch/events' | 'btt/events' | 'btt/reminders';
+export type TabKey = 'admin/accounts' | 'admin/events' | 'admin/tasks' | 'bch/new' | 'bch/events' | 'btt/events' | 'btt/reminders';
 
 export const TABS: Record<Role, { key: TabKey; label: string }[]> = {
   ADMIN: [
     { key: 'admin/accounts', label: 'Tài khoản' },
+    { key: 'admin/events', label: 'Sự kiện' },
     { key: 'admin/tasks', label: 'Quản lý task' },
   ],
   BCH: [

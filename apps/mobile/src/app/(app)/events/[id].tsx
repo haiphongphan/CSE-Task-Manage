@@ -55,7 +55,7 @@ export default function EventDetailScreen() {
         description={`${fmtSchedule(e.sessions)} · ${e.location}`}
       />
       {isBtt && <Button title={`Nhắc nhở thông minh · ${reminders.data?.total ?? 0}`} variant="outline" icon="bell" onPress={() => openTab('btt/reminders')} />}
-      {e.permissions.canEdit && user.role === 'BCH' && (
+      {e.permissions.canEdit && user.role !== 'BTT' && (
         <Button title="Sửa sự kiện" icon="edit" onPress={() => router.push(`/bch/edit/${e.id}`)} />
       )}
       <Button title="Về danh sách" variant="outline" icon="arrow-left" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} />

@@ -67,7 +67,7 @@ export default function EventDetailPage() {
   const shown = deliverables.filter((t) => (filter === 'all' ? true : filter === 'done' ? t.status === 'COMPLETED' : t.status !== 'COMPLETED'));
   const doneCount = deliverables.filter((t) => t.status === 'COMPLETED').length;
 
-  const backHref = user.role === 'ADMIN' ? '/admin/tasks' : user.role === 'BCH' ? '/bch/events' : '/btt/events';
+  const backHref = user.role === 'ADMIN' ? '/admin/events' : user.role === 'BCH' ? '/bch/events' : '/btt/events';
   const eyebrow = user.role === 'ADMIN' ? 'Quản trị / Chi tiết sự kiện' : user.role === 'BCH' ? 'BCH / Ban Chấp hành' : 'BTT / Ban Truyền thông';
 
   return (
@@ -90,8 +90,8 @@ export default function EventDetailPage() {
                 </Button>
               </Link>
             )}
-            {e.permissions.canEdit && user.role === 'BCH' && (
-              <Link href={`/bch/events/${e.id}/edit`}>
+            {e.permissions.canEdit && user.role !== 'BTT' && (
+              <Link href={user.role === 'ADMIN' ? `/admin/events/${e.id}/edit` : `/bch/events/${e.id}/edit`}>
                 <Button icon={<PenSquare className="size-4" />}>Sửa sự kiện</Button>
               </Link>
             )}
