@@ -65,6 +65,8 @@ model Event {
 
   activityLogs  ActivityLog[]
   attachments   EventAttachment[]
+  sessions      EventSession[]
+  photoSlots    PhotoSlot[]
   members       EventMember[]
   createdBy     User           @relation(fields: [createdById], references: [id], onUpdate: NoAction)
   notifications Notification[]
@@ -238,4 +240,29 @@ enum NotificationType {
   TASK_UPDATED
 
   @@map("notification_type")
+}
+
+/// Các ngày diễn ra của sự kiện (không cần liên tiếp) — xem db/schema.sql
+model EventSession {
+  id       Int      @id @default(autoincrement())
+  eventId  Int      @map("event_id")
+  startsAt DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt   DateTime @map("ends_at") @db.Timestamptz(6)
+  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([eventId, startsAt], map: "idx_event_sessions_event")
+  @@map("event_sessions")
+}
+
+/// Lịch chụp ảnh: ngày/giờ cần photo + số người
+model PhotoSlot {
+  id       Int      @id @default(autoincrement())
+  eventId  Int      @map("event_id")
+  startsAt DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt   DateTime @map("ends_at") @db.Timestamptz(6)
+  quantity Int      @default(1) @db.SmallInt
+  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([eventId, startsAt], map: "idx_photo_slots_event")
+  @@map("photo_slots")
 }

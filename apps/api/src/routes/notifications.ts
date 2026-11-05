@@ -83,7 +83,12 @@ notificationsRouter.get('/reminders', requireRole('BTT'), async (req, res) => {
       event: { status: 'PUBLISHED', members: { some: { userId: user.id } } },
     },
     include: {
-      event: { select: { id: true, name: true, startsAt: true, endsAt: true, location: true, photographerQuantity: true } },
+      event: {
+        select: {
+          id: true, name: true, startsAt: true, endsAt: true, location: true, photographerQuantity: true,
+          photoSlots: { select: { startsAt: true, endsAt: true, quantity: true }, orderBy: { startsAt: 'asc' } },
+        },
+      },
     },
     orderBy: { deadline: 'asc' },
   });

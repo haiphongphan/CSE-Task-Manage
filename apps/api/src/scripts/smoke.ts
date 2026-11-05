@@ -126,6 +126,60 @@ async function main() {
   check('BCH sửa sự kiện chưa diễn ra', r.status === 200 && r.json.event.tasks.length === 3, r.json);
   r = await call('POST', `/tasks/${recap.id}/remind`, bch, {});
   check('BCH gửi nhắc việc', r.status === 200 && r.json.sent >= 1, r.json);
+  // --- Sự kiện nhiều ngày, không liên tiếp + lịch chụp theo ngày + nhiều ấn phẩm "Khác" ---
+  const at = (days: number, h: number, m = 0) => {
+    const d = new Date(start.getTime() + days * day);
+    d.setUTCHours(h - 7, m, 0, 0); // giờ VN
+    return d;
+  };
+  const multi = {
+    ...payload,
+    name: 'Sự kiện 2 ngày cách nhau',
+    sessions: [
+      { startsAt: at(3, 8), endsAt: at(3, 12) }, // gửi lộn thứ tự: API tự sắp xếp
+      { startsAt: at(0, 9), endsAt: at(0, 17) },
+    ],
+    photoSlots: [
+      { startsAt: at(0, 9), endsAt: at(0, 11), quantity: 2 },
+      { startsAt: at(3, 8), endsAt: at(3, 12), quantity: 3 },
+    ],
+    deliverables: [
+      { type: 'OTHER', title: 'Instagram story', dimensions: '1080 × 1920 px', deadline: new Date(Date.now() + 2 * day) },
+      { type: 'OTHER', title: 'Video teaser', deadline: new Date(Date.now() + 3 * day) },
+    ],
+  };
+  r = await call('POST', '/events', bch, { ...multi, sessions: [multi.sessions[1], { startsAt: at(0, 18), endsAt: at(0, 20) }] });
+  check('Hai buổi cùng một ngày bị từ chối', r.status === 400, r.json);
+  r = await call('POST', '/events', bch, { ...multi, sessions: [{ startsAt: at(0, 9), endsAt: at(1, 2) }] });
+  check('Buổi kéo qua ngày hôm sau bị từ chối', r.status === 400, r.json);
+  r = await call('POST', '/events', bch, { ...multi, photoSlots: [{ startsAt: at(1, 9), endsAt: at(1, 11), quantity: 1 }] });
+  check('Chụp ảnh vào ngày không diễn ra bị từ chối', r.status === 400, r.json);
+  r = await call('POST', '/events', bch, multi);
+  const mev = r.json?.event;
+  check(
+    'Tạo sự kiện 2 ngày không liên tiếp',
+    r.status === 201 && mev.sessions.length === 2 &&
+      new Date(mev.startsAt).getTime() === at(0, 9).getTime() && new Date(mev.endsAt).getTime() === at(3, 12).getTime(),
+    r.json,
+  );
+  const mphoto = mev.tasks.find((t: any) => t.type === 'PHOTOGRAPHER');
+  check(
+    'Lịch chụp 2 ngày → 1 task chụp ảnh tóm tắt',
+    mev.photoSlots.length === 2 && mev.photographerQuantity === 3 && mphoto.dimensions === '2 ngày · 5 lượt người chụp',
+    mev,
+  );
+  check('Nhiều ấn phẩm "Khác"', mev.tasks.filter((t: any) => t.type === 'OTHER').length === 2, mev.tasks);
+  const mrecap = mev.tasks.find((t: any) => t.type === 'RECAP');
+  check('Hạn recap tính từ ngày cuối', new Date(mrecap.deadline).getTime() === at(3, 12).getTime() + 7 * day, mrecap);
+  r = await call('PUT', `/events/${mev.id}`, bch, { ...multi, sessions: [multi.sessions[1]], photoSlots: [] });
+  check(
+    'Sửa còn 1 ngày, bỏ chụp ảnh',
+    r.status === 200 && r.json.event.sessions.length === 1 && !r.json.event.tasks.some((t: any) => t.type === 'PHOTOGRAPHER'),
+    r.json,
+  );
+  r = await call('DELETE', `/events/${mev.id}`, admin);
+  check('Xoá sự kiện nhiều ngày', r.status === 204);
+
   r = await call('PUT', '/events/3', bch, payload);
   check('BCH không sửa được sự kiện đã diễn ra', r.status === 403, r.json);
 

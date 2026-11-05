@@ -833,3 +833,44 @@ select u.username, count(w.*) as thiet_bi from users u left join web_push_subscr
 select recipient_id, title, body, created_at, push_sent_at, email_sent_at from notifications
 where type = 'DAILY_DIGEST' order by created_at desc limit 10;
 ```
+
+---
+
+## 17. Vòng 5 — Sự kiện nhiều ngày, lịch chụp theo ngày, nhiều "ấn phẩm khác"
+
+### 17.1. Yêu cầu
+- BCH chọn sự kiện diễn ra trong **x ngày** (mặc định 1). Mỗi ngày chọn **ngày cụ thể** và **giờ từ – đến**. Các ngày **không bắt buộc liên tiếp**.
+- Chụp ảnh cũng theo từng ngày: ngày nào cần photo, chụp từ mấy giờ đến mấy giờ, cần bao nhiêu người.
+- "Ấn phẩm khác" thêm được **nhiều cái**, mỗi cái có tên loại, kích thước và hạn chót riêng.
+
+### 17.2. Thiết kế dữ liệu: quan hệ 1–n thay vì thêm cột
+Một sự kiện có **nhiều** ngày, nên không thể nhét vào bảng `events` (kiểu `day1_start`, `day2_start`… sẽ không biết bao nhiêu cột là đủ). Cách chuẩn là tách thành bảng con:
+
+| Bảng | Một dòng là | Cột chính |
+|---|---|---|
+| `event_sessions` | một ngày diễn ra | `event_id`, `starts_at`, `ends_at` |
+| `photo_slots` | một ngày cần chụp | `event_id`, `starts_at`, `ends_at`, `quantity` |
+
+**Giữ `events.starts_at / ends_at`** (= đầu ngày đầu tiên / cuối ngày cuối cùng). Đây là *dữ liệu dẫn xuất* (denormalized), lưu sẵn để mọi chỗ cũ vẫn dùng được mà không phải sửa: nhắc chụp ảnh 3 ngày trước, recap sau ngày cuối, hạn recap = ngày cuối + 7 ngày, trạng thái "Sắp diễn ra / Đang diễn ra". Đánh đổi: API phải luôn tính lại 2 cột này khi lưu. Việc đó nằm gọn trong `.transform()` của zod ở `routes/events.ts`.
+
+**Vẫn chỉ 1 task PHOTOGRAPHER.** Bảng `photo_slots` là chi tiết của task đó. BTT bấm hoàn thành một lần cho cả lịch chụp. Cột `dimensions` của task ghi tóm tắt kiểu "2 ngày · 5 lượt người chụp".
+
+### 17.3. Kiểm tra hợp lệ ở API (không tin client)
+Trong `eventSchema.transform(...)`:
+- Mỗi buổi: giờ kết thúc phải sau giờ bắt đầu, và **nằm trong cùng một ngày theo giờ VN** (`vnDateString`).
+- Không có 2 buổi cùng một ngày. Không thể dùng UNIQUE trong SQL vì "ngày" phụ thuộc múi giờ, nên kiểm tra ở API.
+- Slot chụp ảnh phải rơi vào **một trong các ngày diễn ra**, tối đa 1 slot mỗi ngày, từ 1 đến 20 người.
+- Client cũ (chỉ gửi `startsAt/endsAt`, `photographerNeeded/Quantity`) vẫn chạy được: API tự quy đổi thành 1 ngày và 1 slot. Đây là **tương thích ngược**: app Android đã cài chưa cập nhật cũng không bị hỏng.
+
+Khi lưu: `syncSchedule()` xoá rồi tạo lại toàn bộ ngày và slot trong **cùng transaction** với `syncTasks()`, nên không bao giờ có trạng thái "đã lưu ngày nhưng chưa lưu task".
+
+### 17.4. Migration cho DB đang chạy
+`db/migrations/003_event_sessions.sql`: `CREATE TABLE IF NOT EXISTS` + **backfill**: mỗi sự kiện cũ sinh 1 buổi từ `starts_at/ends_at`. Sự kiện cần chụp ảnh sinh thêm 1 slot. Câu `INSERT ... WHERE NOT EXISTS` giúp chạy lại nhiều lần không tạo trùng (**idempotent**).
+
+### 17.5. Form
+- Ô "Sự kiện diễn ra trong [− 2 ngày +]": tăng số ngày sẽ thêm một hàng mới, mang sẵn giờ của ngày cuối. Mỗi hàng có ô chọn ngày, giờ từ – đến và nút xoá.
+- Mục 04 liệt kê đúng các ngày ở mục 01. Tick ngày cần chụp, chỉnh giờ chụp và số người. Giờ chụp mặc định bằng giờ sự kiện của ngày đó và tự đổi theo nếu chưa sửa riêng.
+- Ấn phẩm chuyển từ dạng "map theo loại" (mỗi loại tối đa 1) sang **danh sách**, mỗi phần tử có `key` riêng cho React. Loại thường bấm để bật/tắt, còn "Ấn phẩm khác" mỗi lần bấm thêm một cái mới.
+
+### 17.6. Kiểm thử
+`npm run smoke` thêm 9 tình huống: 2 buổi cùng ngày bị chặn, buổi kéo qua nửa đêm bị chặn, chụp ảnh vào ngày không diễn ra bị chặn, tạo sự kiện 2 ngày cách quãng (API tự sắp thứ tự), tóm tắt task chụp ảnh, 2 ấn phẩm "Khác", hạn recap tính từ ngày cuối, sửa còn 1 ngày và bỏ chụp ảnh, xoá.

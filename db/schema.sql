@@ -19,6 +19,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ---------- Dọn dẹp (thứ tự ngược với phụ thuộc) ----------
 DROP TABLE IF EXISTS event_attachments CASCADE;
+DROP TABLE IF EXISTS photo_slots     CASCADE;
+DROP TABLE IF EXISTS event_sessions  CASCADE;
 DROP TABLE IF EXISTS activity_logs   CASCADE;
 DROP TABLE IF EXISTS notifications   CASCADE;
 DROP TABLE IF EXISTS web_push_subscriptions CASCADE;
@@ -107,6 +109,39 @@ CREATE INDEX idx_events_created_by ON events(created_by);
 CREATE INDEX idx_events_starts_at  ON events(starts_at);
 CREATE TRIGGER trg_events_updated BEFORE UPDATE ON events
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- =====================================================================
+-- event_sessions: các NGÀY diễn ra của sự kiện (sự kiện kéo dài x ngày).
+-- Các ngày KHÔNG cần liên tiếp (VD thứ 2 và thứ 5). Mỗi ngày có giờ
+-- bắt đầu – kết thúc riêng, nằm trong cùng một ngày.
+-- events.starts_at / ends_at = đầu buổi đầu tiên / cuối buổi cuối cùng
+-- (API tự tính) để các phần khác (nhắc việc, recap, trạng thái) giữ nguyên.
+-- Mỗi sự kiện tối đa 1 buổi/ngày — API kiểm tra (cần quy đổi giờ VN).
+-- =====================================================================
+CREATE TABLE event_sessions (
+  id        integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  event_id  integer     NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  starts_at timestamptz NOT NULL,
+  ends_at   timestamptz NOT NULL,
+  CONSTRAINT event_sessions_time_order CHECK (ends_at > starts_at)
+);
+CREATE INDEX idx_event_sessions_event ON event_sessions(event_id, starts_at);
+
+-- =====================================================================
+-- photo_slots: lịch chụp ảnh — ngày/giờ nào cần photo và cần bao nhiêu người.
+-- Mỗi slot thuộc một ngày diễn ra của sự kiện (API kiểm tra).
+-- Vẫn chỉ có MỘT task PHOTOGRAPHER cho sự kiện; task tóm tắt lịch này.
+-- =====================================================================
+CREATE TABLE photo_slots (
+  id        integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  event_id  integer     NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  starts_at timestamptz NOT NULL,
+  ends_at   timestamptz NOT NULL,
+  quantity  smallint    NOT NULL DEFAULT 1,
+  CONSTRAINT photo_slots_time_order CHECK (ends_at > starts_at),
+  CONSTRAINT photo_slots_quantity   CHECK (quantity BETWEEN 1 AND 20)
+);
+CREATE INDEX idx_photo_slots_event ON photo_slots(event_id, starts_at);
 
 -- =====================================================================
 -- event_members: các BTT phụ trách một sự kiện (quan hệ nhiều–nhiều)
@@ -276,5 +311,7 @@ ALTER TABLE web_push_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE activity_logs  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_attachments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE event_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE photo_slots    ENABLE ROW LEVEL SECURITY;
 
 COMMIT;

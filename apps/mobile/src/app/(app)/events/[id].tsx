@@ -10,7 +10,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useApi } from '@/lib/useApi';
 import { openTab } from '@/lib/workspace';
-import { fmtDate, fmtDayTime, fmtRange, PHASE_LABEL, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
+import { fmtDayTime, fmtRange, fmtSchedule, fmtWeekday, PHASE_LABEL, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
 import { colors } from '@/lib/theme';
 import type { Activity, EventDetail, Reminders, Task, TaskStatus } from '@/lib/types';
 
@@ -52,7 +52,7 @@ export default function EventDetailScreen() {
       <PageHeader
         eyebrow={user.role === 'BTT' ? 'BTT / Ban Truyền thông' : user.role === 'BCH' ? 'BCH / Ban Chấp hành' : 'Quản trị'}
         title={e.name}
-        description={`${fmtDate(e.startsAt)} · ${fmtRange(e.startsAt, e.endsAt)} · ${e.location}`}
+        description={`${fmtSchedule(e.sessions)} · ${e.location}`}
       />
       {isBtt && <Button title={`Nhắc nhở thông minh · ${reminders.data?.total ?? 0}`} variant="outline" icon="bell" onPress={() => openTab('btt/reminders')} />}
       {e.permissions.canEdit && user.role === 'BCH' && (
@@ -74,7 +74,9 @@ export default function EventDetailScreen() {
           {e.name}
         </T>
         <T size={12} color={colors.white}>
-          {fmtDate(e.startsAt)} · {fmtRange(e.startsAt, e.endsAt)} · {e.location}
+          {e.sessions.length > 1
+            ? e.sessions.map((s, i) => `Ngày ${i + 1} · ${fmtWeekday(s.startsAt)} · ${fmtRange(s.startsAt, s.endsAt)}`).join('\n') + `\n${e.location}`
+            : `${fmtSchedule(e.sessions)} · ${e.location}`}
         </T>
         <T size={11} color={colors.sky}>
           Tạo bởi {e.createdBy?.fullName} · BCH
@@ -117,7 +119,7 @@ export default function EventDetailScreen() {
               <T style={{ flex: 1 }}>{t.title}</T>
             </View>
             <T size={11} color={colors.muted}>
-              {t.type === 'PHOTOGRAPHER' ? `${e.photographerQuantity} người chụp · ${fmtDate(e.startsAt)} · ${e.location}` : `Hạn recap ${fmtDayTime(t.deadline)} (7 ngày sau sự kiện)`}
+              {t.type === 'PHOTOGRAPHER' ? e.photoSlots.map((p) => `${fmtWeekday(p.startsAt)} · ${fmtRange(p.startsAt, p.endsAt)} · ${p.quantity} người chụp`).join('\n') : `Hạn recap ${fmtDayTime(t.deadline)} (7 ngày sau ngày cuối của sự kiện)`}
             </T>
             <TaskActions task={t} event={e} onChanged={refreshAll} setNotice={setNotice} />
           </View>

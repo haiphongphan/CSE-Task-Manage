@@ -1,6 +1,6 @@
 // Bản sao từ apps/web/src/lib/format.ts
 // Định dạng ngày giờ & nhãn tiếng Việt. Mọi giờ hiển thị theo giờ Việt Nam (ICT, UTC+7).
-import type { EventPhase, EventStatus, Role, TaskStatus, TaskType } from './types';
+import type { EventPhase, EventStatus, Role, TaskStatus, TaskType, TimeRange } from './types';
 
 // Trên điện thoại, engine Hermes có thể thiếu dữ liệu múi giờ đầy đủ, nên tự cộng +7 giờ
 // (Việt Nam không có giờ mùa hè) thay vì dùng Intl như bản web.
@@ -33,6 +33,21 @@ export const fmtTime = (iso: string | Date) => parts(iso).time;
 export const fmtDayTime = (iso: string | Date) => `${fmtDay(iso)} · ${fmtTime(iso)}`;
 /** 09:00–16:00 */
 export const fmtRange = (start: string, end: string) => `${fmtTime(start)}–${fmtTime(end)}`;
+/** "T7, 08/11" */
+export const fmtWeekday = (iso: string | Date) => {
+  const p = parts(iso);
+  return `${p.weekday}, ${p.day}/${p.month}`;
+};
+
+/** Lịch sự kiện: 1 ngày "08/11/2026 · 09:00–16:00", nhiều ngày "2 ngày · 08/11, 10/11/2026" */
+export function fmtSchedule(sessions: TimeRange[]) {
+  if (sessions.length === 0) return '';
+  if (sessions.length === 1) return `${fmtDate(sessions[0].startsAt)} · ${fmtRange(sessions[0].startsAt, sessions[0].endsAt)}`;
+  const last = sessions[sessions.length - 1];
+  const days = sessions.slice(0, -1).map((s) => fmtDay(s.startsAt));
+  return `${sessions.length} ngày · ${[...days, fmtDate(last.startsAt)].join(', ')}`;
+}
+
 /** T5, 22/10/2026 · 09:00 ICT */
 export const fmtNow = (d = new Date()) => {
   const p = parts(d);

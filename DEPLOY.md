@@ -96,10 +96,13 @@ npx web-push generate-vapid-keys   # → VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY (k
      Đăng nhập lần đầu sẽ bị yêu cầu đổi mật khẩu.
 5. Kiểm tra: Supabase → **Table Editor** thấy các bảng `users`, `events`, `tasks`… Mỗi bảng có nhãn **RLS enabled**. Đó là chủ ý: `schema.sql` bật Row Level Security để khoá `anon` công khai của Supabase không đọc được dữ liệu, còn API kết nối bằng user `postgres` (chủ bảng) nên không bị ảnh hưởng.
 
-> **Đã nạp `schema.sql` bản cũ (trước khi có Web Push) và đã có dữ liệu?** Không cần làm lại từ đầu, chỉ chạy thêm:
+> **Đã nạp `schema.sql` bản cũ và đã có dữ liệu?** Không cần làm lại từ đầu. Chạy các file migration còn thiếu theo thứ tự (chạy lại file đã chạy rồi cũng không sao):
 > ```bash
-> psql "$SUPABASE_URL" -f migrations/001_web_push.sql
+> psql "$SUPABASE_URL" -f migrations/001_web_push.sql        # thông báo Web Push
+> psql "$SUPABASE_URL" -f migrations/002_event_attachments.sql # file mẫu / tham chiếu
+> psql "$SUPABASE_URL" -f migrations/003_event_sessions.sql    # sự kiện nhiều ngày + lịch chụp theo ngày
 > ```
+> File 003 tự chuyển sự kiện cũ thành 1 ngày diễn ra và 1 slot chụp ảnh. **Chạy 003 trước khi deploy API mới**, vì API mới đọc 2 bảng `event_sessions` và `photo_slots`.
 
 > **Khi sửa `schema.sql` sau này**: chạy lại `psql "$SUPABASE_URL" -f schema.sql` sẽ **XOÁ SẠCH DỮ LIỆU**. Với dữ liệu thật, hãy viết lệnh `ALTER TABLE ...` riêng thay vì chạy lại cả file.
 

@@ -9,7 +9,7 @@ import { useAuth, useRoleAllowed } from '@/lib/auth';
 import { takeFlash } from '@/lib/flash';
 import { setTab, useOnTabActive } from '@/lib/workspace';
 import { useApi, useDebounced } from '@/lib/useApi';
-import { fmtDate, fmtDayTime, fmtNow, fmtRange } from '@/lib/format';
+import { fmtDayTime, fmtNow, fmtSchedule } from '@/lib/format';
 import { colors } from '@/lib/theme';
 import type { EventStatus, EventSummary } from '@/lib/types';
 
@@ -91,7 +91,7 @@ export default function BchEventsScreen() {
               <EventStatusBadge status={e.status} />
             </View>
             <T size={12} color={colors.muted}>
-              {e.location} · {fmtDate(e.startsAt)} · {fmtRange(e.startsAt, e.endsAt)}
+              {e.location} · {fmtSchedule(e.sessions)}
             </T>
             {e.status === 'DRAFT' ? (
               <T size={11} color={colors.muted}>

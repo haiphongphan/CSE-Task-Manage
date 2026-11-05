@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { AlarmClock, Camera, CheckCircle2, Clock, Newspaper, ShieldCheck, X } from 'lucide-react';
 import { Badge, Button, Empty } from './ui';
 import { api } from '@/lib/api';
-import { fmtDate, fmtDayTime, fmtRange, timeLeft } from '@/lib/format';
+import { fmtDayTime, fmtRange, fmtWeekday, timeLeft } from '@/lib/format';
 import type { Reminders } from '@/lib/types';
 
 /** "Đã hiểu" chỉ ẩn thẻ trong hôm nay trên trình duyệt này — KHÔNG hoàn thành task */
@@ -130,17 +130,22 @@ function PhotoCard({ r, onDone }: { r: Reminders['photo'][number]; onDone: () =>
       <div className="text-xs text-white/90">
         <p>{r.event.name}</p>
         <p className="mt-1">
-          {fmtDate(r.event.startsAt)} · {fmtRange(r.event.startsAt, r.event.endsAt)} · {r.event.location}
+          {r.event.location}
         </p>
       </div>
-      <p className="text-[13px]">
-        {when} Hãy xác nhận {r.event.photographerQuantity} người chụp ảnh cho toàn bộ sự kiện.
-      </p>
+      <p className="text-[13px]">{when} Hãy xác nhận người chụp ảnh cho từng ngày bên dưới.</p>
       <div className="rounded-lg bg-white/10 p-3">
-        <p className="text-[10px] uppercase text-sky">Trạng thái phân công</p>
-        <p className="mt-1 text-[13px]">
-          Cần {r.event.photographerQuantity} người chụp · Cả nhóm BTT phụ trách
-        </p>
+        <p className="text-[10px] uppercase text-sky">Lịch chụp · Cả nhóm BTT phụ trách</p>
+        <ul className="mt-1 flex flex-col gap-1 text-[13px]">
+          {(r.event.photoSlots?.length ? r.event.photoSlots : [{ startsAt: r.event.startsAt, endsAt: r.event.endsAt, quantity: r.event.photographerQuantity }]).map((p) => (
+            <li key={p.startsAt} className="flex justify-between gap-2">
+              <span>
+                {fmtWeekday(p.startsAt)} · {fmtRange(p.startsAt, p.endsAt)}
+              </span>
+              <span className="text-sky">{p.quantity} người</span>
+            </li>
+          ))}
+        </ul>
       </div>
       <Button onClick={complete} loading={loading} icon={<CheckCircle2 className="size-4" />} className="!border-sky/40">
         Đánh dấu hoàn thành

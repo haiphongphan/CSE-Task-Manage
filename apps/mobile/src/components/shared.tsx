@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { api } from '@/lib/api';
-import { EVENT_STATUS_LABEL, fmtDate, fmtDayTime, fmtRange, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
+import { EVENT_STATUS_LABEL, fmtDayTime, fmtRange, fmtWeekday, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
 import { colors } from '@/lib/theme';
 import type { EventStatus, Reminders, Task } from '@/lib/types';
 import { Badge, Button, Card, Icon, T } from './ui';
@@ -117,18 +117,21 @@ function PhotoCard({ r, onDone }: { r: Reminders['photo'][number]; onDone: () =>
       <T size={12} color={colors.white}>
         {r.event.name}
         {'\n'}
-        {fmtDate(r.event.startsAt)} · {fmtRange(r.event.startsAt, r.event.endsAt)} · {r.event.location}
+        {r.event.location}
       </T>
-      <T color={colors.white}>
-        {when} Hãy xác nhận {r.event.photographerQuantity} người chụp ảnh cho toàn bộ sự kiện.
-      </T>
-      <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 8, padding: 12 }}>
+      <T color={colors.white}>{when} Hãy xác nhận người chụp ảnh cho từng ngày bên dưới.</T>
+      <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 8, padding: 12, gap: 4 }}>
         <T size={10} color={colors.sky} upper>
-          Trạng thái phân công
+          Lịch chụp · Cả nhóm BTT phụ trách
         </T>
-        <T color={colors.white}>
-          Cần {r.event.photographerQuantity} người chụp · Cả nhóm BTT phụ trách
-        </T>
+        {(r.event.photoSlots?.length ? r.event.photoSlots : [{ startsAt: r.event.startsAt, endsAt: r.event.endsAt, quantity: r.event.photographerQuantity }]).map((p) => (
+          <View key={p.startsAt} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <T color={colors.white}>
+              {fmtWeekday(p.startsAt)} · {fmtRange(p.startsAt, p.endsAt)}
+            </T>
+            <T color={colors.sky}>{p.quantity} người</T>
+          </View>
+        ))}
       </View>
       <Button title="Đánh dấu hoàn thành" icon="check-circle" onPress={complete} loading={loading} />
       {error ? (

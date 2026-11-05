@@ -50,6 +50,14 @@ export interface Task {
   updatedAt: string;
 }
 
+export interface TimeRange {
+  startsAt: string;
+  endsAt: string;
+}
+export interface PhotoSlot extends TimeRange {
+  quantity: number;
+}
+
 export interface EventSummary {
   id: number;
   name: string;
@@ -60,7 +68,12 @@ export interface EventSummary {
   phase: EventPhase;
   editable: boolean;
   photographerNeeded: boolean;
+  /** Số người chụp đông nhất trong 1 ngày */
   photographerQuantity: number;
+  /** Các ngày diễn ra (không cần liên tiếp), đã sắp theo thời gian */
+  sessions: TimeRange[];
+  /** Lịch chụp ảnh: ngày/giờ cần photo + số người */
+  photoSlots: PhotoSlot[];
   createdBy: MiniUser | null;
   members: MiniUser[];
   progress: {
@@ -127,6 +140,7 @@ export interface ReminderEvent {
   endsAt: string;
   location: string;
   photographerQuantity: number;
+  photoSlots?: PhotoSlot[];
 }
 
 export interface Reminders {

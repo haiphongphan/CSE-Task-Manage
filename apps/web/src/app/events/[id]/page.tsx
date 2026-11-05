@@ -30,7 +30,7 @@ import { api } from '@/lib/api';
 import { useApi } from '@/lib/useApi';
 import { useAuth } from '@/lib/auth';
 import { downloadAttachment, fmtBytes } from '@/lib/attachments';
-import { fmtDate, fmtDayTime, fmtNow, fmtRange, PHASE_LABEL, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
+import { fmtDate, fmtDayTime, fmtNow, fmtRange, fmtSchedule, fmtWeekday, PHASE_LABEL, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
 import type { Activity, Attachment, EventDetail, Reminders, Task, TaskStatus } from '@/lib/types';
 
 /** Tiến độ gợi ý khi BTT đổi trạng thái */
@@ -137,8 +137,17 @@ export default function EventDetailPage() {
           <p className="text-[11px] uppercase text-sky">Chi tiết sự kiện</p>
           <h2 className="mt-2 text-2xl font-bold">{e.name}</h2>
           <p className="mt-2 text-xs text-white/90">
-            {fmtDate(e.startsAt)} · {fmtRange(e.startsAt, e.endsAt)} · {e.location}
+            {fmtSchedule(e.sessions)} · {e.location}
           </p>
+          {e.sessions.length > 1 && (
+            <ul className="mt-2 flex flex-wrap gap-1.5">
+              {e.sessions.map((s, i) => (
+                <li key={s.startsAt} className="rounded-md bg-white/10 px-2 py-1 text-[11px]">
+                  Ngày {i + 1} · {fmtWeekday(s.startsAt)} · {fmtRange(s.startsAt, s.endsAt)}
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="mt-1 text-[11px] text-sky">
             Tạo bởi {e.createdBy?.fullName} · BCH {e.publishedAt && `· Gửi ngày ${fmtDate(e.publishedAt)}`}
           </p>
@@ -152,7 +161,7 @@ export default function EventDetailPage() {
             {e.progress.completed} / {e.progress.total} hoàn thành
           </p>
           <p className="text-[11px] text-white/80">
-            {deliverables.length} ấn phẩm{e.photographerNeeded ? ` + ${e.photographerQuantity} người chụp ảnh` : ''} + recap
+            {deliverables.length} ấn phẩm{e.photographerNeeded ? ` + chụp ảnh ${e.photoSlots.length} ngày` : ''} + recap
           </p>
         </div>
       </section>
@@ -191,11 +200,21 @@ export default function EventDetailPage() {
                   </span>
                   {t.isOverdue && <TaskStatusBadge task={t} />}
                 </div>
-                <p className="text-xs text-muted">
-                  {t.type === 'PHOTOGRAPHER'
-                    ? `${e.photographerQuantity} người chụp · ${fmtDate(e.startsAt)} · ${fmtRange(e.startsAt, e.endsAt)} · ${e.location}`
-                    : `Hạn recap ${fmtDayTime(t.deadline)} (7 ngày sau sự kiện)`}
-                </p>
+                {t.type === 'PHOTOGRAPHER' ? (
+                  <ul className="flex flex-col gap-1 text-xs text-muted">
+                    {e.photoSlots.map((p) => (
+                      <li key={p.startsAt} className="flex items-center justify-between gap-2">
+                        <span>
+                          {fmtWeekday(p.startsAt)} · {fmtRange(p.startsAt, p.endsAt)}
+                        </span>
+                        <span className="text-navy">{p.quantity} người chụp</span>
+                      </li>
+                    ))}
+                    <li>{e.location}</li>
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted">Hạn recap {fmtDayTime(t.deadline)} (7 ngày sau ngày cuối của sự kiện)</p>
+                )}
                 <TaskActions task={t} event={e} onChanged={refreshAll} setNotice={setNotice} />
               </div>
             ))}

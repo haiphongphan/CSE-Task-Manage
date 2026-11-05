@@ -19,7 +19,7 @@ SET search_path TO public, extensions;
 BEGIN;
 
 -- Xoá dữ liệu cũ, đưa bộ đếm ID về 1
-TRUNCATE activity_logs, notifications, web_push_subscriptions, push_tokens, tasks, event_members, events, users
+TRUNCATE photo_slots, event_sessions, activity_logs, notifications, web_push_subscriptions, push_tokens, tasks, event_members, events, users
   RESTART IDENTITY CASCADE;
 ALTER SEQUENCE task_code_seq RESTART WITH 1;
 
@@ -56,13 +56,13 @@ $$ LANGUAGE sql STABLE;
 INSERT INTO events (name, location, starts_at, ends_at, notes, online_content, offline_content,
                     photographer_needed, photographer_quantity, status, created_by, published_at)
 VALUES
--- (1) Sắp diễn ra trong 3 ngày
+-- (1) Sắp diễn ra trong 3 ngày, kéo dài 2 ngày KHÔNG liên tiếp (ngày +3 và +5)
 ('Ngày hội Sáng tạo CSE', 'Hội trường A, Tòa nhà CSE',
-  pg_temp.vn(3, '09:00'), pg_temp.vn(3, '16:00'),
+  pg_temp.vn(3, '09:00'), pg_temp.vn(5, '12:00'),
   'Ngày hội trưng bày dự án sinh viên, demo và chia sẻ từ cựu sinh viên. Ghi hình khai mạc, các gian dự án, diễn giả và ảnh tập thể. Recap: nêu bật 12 dự án, 3 diễn giả khách mời và các giải thưởng. Chia sẻ ảnh đã chỉnh trong 24 giờ sau sự kiện.',
   'Ngày hội Sáng tạo CSE 2026 — Kết nối. Kiến tạo. Truyền cảm hứng. Hẹn bạn tại Hội trường A để khám phá các dự án sáng tạo của sinh viên và gặp gỡ các mentor. Đăng ký: cse.edu.vn/sangtao #CSEInnovationDay',
   E'NGÀY HỘI SÁNG TẠO CSE 2026\nKẾT NỐI. KIẾN TẠO. TRUYỀN CẢM HỨNG.\nHội trường A, Tòa nhà CSE\nCó logo CSE, logo đối tác và mã QR đăng ký. Chừa lề an toàn 5 cm cho bản in khổ lớn.',
-  true, 1, 'PUBLISHED', pg_temp.uid('mai.anh'), now() - interval '5 days'),
+  true, 2, 'PUBLISHED', pg_temp.uid('mai.anh'), now() - interval '5 days'),
 
 -- (2) Diễn ra sau 8 ngày, không cần chụp ảnh
 ('Tọa đàm Công nghệ Cộng đồng', 'Phòng Lab 2',
@@ -99,6 +99,23 @@ VALUES
   true, 1, 'PUBLISHED', pg_temp.uid('thu.pham'), now() - interval '1 day');
 
 -- ---------------------------------------------------------------------
+-- 2b) Ngày diễn ra + lịch chụp ảnh
+--     Sự kiện 1: 2 ngày cách nhau (ngày +3 cả ngày, ngày +5 buổi sáng).
+--     Các sự kiện khác: 1 ngày = (starts_at, ends_at).
+-- ---------------------------------------------------------------------
+INSERT INTO event_sessions (event_id, starts_at, ends_at) VALUES
+  (1, pg_temp.vn(3, '09:00'), pg_temp.vn(3, '16:00')),
+  (1, pg_temp.vn(5, '08:00'), pg_temp.vn(5, '12:00'));
+INSERT INTO event_sessions (event_id, starts_at, ends_at)
+  SELECT id, starts_at, ends_at FROM events WHERE id <> 1;
+
+INSERT INTO photo_slots (event_id, starts_at, ends_at, quantity) VALUES
+  (1, pg_temp.vn(3, '09:00'), pg_temp.vn(3, '16:00'), 2),
+  (1, pg_temp.vn(5, '08:30'), pg_temp.vn(5, '11:00'), 1);
+INSERT INTO photo_slots (event_id, starts_at, ends_at, quantity)
+  SELECT id, starts_at, ends_at, photographer_quantity FROM events WHERE id <> 1 AND photographer_needed;
+
+-- ---------------------------------------------------------------------
 -- 3) Phân công BTT vào sự kiện
 -- ---------------------------------------------------------------------
 INSERT INTO event_members (event_id, user_id) VALUES
@@ -122,8 +139,9 @@ INSERT INTO tasks (event_id, type, title, dimensions, deadline, status, progress
 (1, 'STANDEE',           'Standee',           '80 × 180 cm',    pg_temp.vn(1, '17:00'), 'COMPLETED',  100, NULL, now() - interval '1 day'),
 (1, 'INVITATION_LETTER', 'Thư mời',           'A5 · 148 × 210 mm', pg_temp.vn(0, '23:00'), 'IN_REVIEW', 90, 'Chờ BCH duyệt nội dung.', NULL),
 (1, 'OTHER',             'Instagram story',   '1080 × 1920 px', pg_temp.vn(1, '12:00'), 'COMPLETED',  100, NULL, now() - interval '1 day'),
-(1, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '1 người chụp ảnh', pg_temp.vn(3, '09:00'), 'TODO', 0, NULL, NULL),
-(1, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(10, '16:00'), 'TODO', 0, NULL, NULL),
+(1, 'OTHER',             'Video teaser',      '1080 × 1350 px · 30 giây', pg_temp.vn(2, '12:00'), 'TODO', 0, NULL, NULL),
+(1, 'PHOTOGRAPHER',      'Phân công chụp ảnh', '2 ngày · 3 lượt người chụp', pg_temp.vn(3, '09:00'), 'TODO', 0, NULL, NULL),
+(1, 'RECAP',             'Recap sự kiện',     NULL,             pg_temp.vn(12, '12:00'), 'TODO', 0, NULL, NULL),
 -- Sự kiện 2
 (2, 'BANNER',            'Banner',            '1920 × 1080 px', pg_temp.vn(5, '12:00'), 'IN_PROGRESS', 30, NULL, NULL),
 (2, 'STANDEE',           'Standee',           '80 × 180 cm',    pg_temp.vn(6, '12:00'), 'TODO', 0, NULL, NULL),

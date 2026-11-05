@@ -9,7 +9,7 @@ import { qs } from '@/lib/api';
 import { useApi, useDebounced } from '@/lib/useApi';
 import { useAuth } from '@/lib/auth';
 import { FLASH_KEY } from '@/lib/flash';
-import { fmtDate, fmtDayTime, fmtNow, fmtRange } from '@/lib/format';
+import { fmtDate, fmtDay, fmtDayTime, fmtNow, fmtRange } from '@/lib/format';
 import type { EventStatus, EventSummary } from '@/lib/types';
 
 interface Resp {
@@ -132,8 +132,17 @@ export default function BchEventsPage() {
                   <p className="mt-1 text-[11px] text-primary">Tạo bởi bạn · {e.createdBy?.fullName}</p>
                 </div>
                 <div className="text-[13px] text-navy">
-                  {fmtDate(e.startsAt)}
-                  <span className="block text-xs text-muted">{fmtRange(e.startsAt, e.endsAt)}</span>
+                  {e.sessions.length > 1 ? (
+                    <>
+                      {e.sessions.map((s) => fmtDay(s.startsAt)).join(', ')}
+                      <span className="block text-xs text-muted">{e.sessions.length} ngày · {fmtDate(e.endsAt).slice(-4)}</span>
+                    </>
+                  ) : (
+                    <>
+                      {fmtDate(e.startsAt)}
+                      <span className="block text-xs text-muted">{fmtRange(e.startsAt, e.endsAt)}</span>
+                    </>
+                  )}
                 </div>
                 <div>
                   <EventStatusBadge status={e.status} />

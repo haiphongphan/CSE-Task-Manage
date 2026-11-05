@@ -1,7 +1,7 @@
 // "Presenter": chuyển bản ghi DB -> JSON gửi cho client.
 // Đặt ở một chỗ để web và mobile luôn nhận cùng một định dạng,
 // và để thêm các trường TÍNH TOÁN (quá hạn, % tiến độ...) không lưu trong DB.
-import type { Event, EventAttachment, EventMember, Task, User } from '../generated/prisma/client';
+import type { Event, EventAttachment, EventMember, EventSession, PhotoSlot, Task, User } from '../generated/prisma/client';
 
 type PublicUserInput = Pick<User, 'id' | 'fullName' | 'username' | 'email' | 'role'> &
   Partial<Pick<User, 'createdAt' | 'mustChangePassword'>>;
@@ -60,6 +60,8 @@ export type EventWithRelations = Event & {
   tasks?: TaskWithRelations[];
   members?: (EventMember & { user: MiniUser })[];
   createdBy?: MiniUser;
+  sessions?: Pick<EventSession, 'startsAt' | 'endsAt'>[];
+  photoSlots?: Pick<PhotoSlot, 'startsAt' | 'endsAt' | 'quantity'>[];
   attachments?: Pick<EventAttachment, 'id' | 'fileName' | 'mimeType' | 'sizeBytes' | 'createdAt'>[];
 };
 
@@ -83,6 +85,12 @@ export function presentEventSummary(e: EventWithRelations, now = new Date()) {
     editable: now < e.startsAt,
     photographerNeeded: e.photographerNeeded,
     photographerQuantity: e.photographerQuantity,
+    // Các ngày diễn ra (không cần liên tiếp). Sự kiện cũ chưa có -> 1 ngày = startsAt–endsAt
+    sessions: e.sessions?.length
+      ? e.sessions.map((x) => ({ startsAt: x.startsAt, endsAt: x.endsAt }))
+      : [{ startsAt: e.startsAt, endsAt: e.endsAt }],
+    // Lịch chụp ảnh: ngày/giờ nào cần photo, bao nhiêu người
+    photoSlots: (e.photoSlots ?? []).map((x) => ({ startsAt: x.startsAt, endsAt: x.endsAt, quantity: x.quantity })),
     createdBy: presentMiniUser(e.createdBy),
     members: (e.members ?? []).map((m) => presentMiniUser(m.user)),
     progress: {

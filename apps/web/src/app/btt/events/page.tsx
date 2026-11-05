@@ -7,7 +7,7 @@ import { Button, Chips, Empty, ErrorBox, Loading, PageHeader, ProgressBar, StatC
 import { qs } from '@/lib/api';
 import { useApi, useDebounced } from '@/lib/useApi';
 import { useAuth } from '@/lib/auth';
-import { fmtDate, fmtDayTime, fmtNow, fmtRange, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
+import { fmtDayTime, fmtNow, fmtSchedule, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
 import type { EventPhase, EventSummary, Reminders } from '@/lib/types';
 
 interface Resp {
@@ -132,7 +132,7 @@ function EventCard({ e }: { e: EventSummary }) {
         <div className="flex flex-col gap-1.5">
           <p className="text-[10px] uppercase text-navy">Ngày sự kiện · ICT</p>
           <p className="flex items-center gap-2 text-[13px] text-navy">
-            <CalendarDays className="size-4 text-primary" /> {fmtDate(e.startsAt)} · {fmtRange(e.startsAt, e.endsAt)}
+            <CalendarDays className="size-4 text-primary" /> {fmtSchedule(e.sessions)}
           </p>
           <p className="flex items-center gap-2 text-xs text-muted">
             <MapPin className="size-4 text-primary" /> {e.location}

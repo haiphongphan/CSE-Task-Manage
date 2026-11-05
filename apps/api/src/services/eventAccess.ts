@@ -11,6 +11,8 @@ export const eventDetailInclude = {
   createdBy: miniUser,
   members: { include: { user: miniUser }, orderBy: { addedAt: 'asc' } },
   tasks: { include: { completedBy: miniUser }, orderBy: [{ deadline: 'asc' }, { id: 'asc' }] },
+  sessions: { orderBy: { startsAt: 'asc' } },
+  photoSlots: { orderBy: { startsAt: 'asc' } },
   // Chỉ thông tin file, KHÔNG kèm nội dung (data) — tải riêng qua /attachments/:id
   attachments: {
     select: { id: true, fileName: true, mimeType: true, sizeBytes: true, createdAt: true },

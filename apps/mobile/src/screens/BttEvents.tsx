@@ -7,7 +7,7 @@ import { qs } from '@/lib/api';
 import { useAuth, useRoleAllowed } from '@/lib/auth';
 import { setTab, useOnTabActive } from '@/lib/workspace';
 import { useApi, useDebounced } from '@/lib/useApi';
-import { fmtDate, fmtDayTime, fmtNow, fmtRange, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
+import { fmtDayTime, fmtNow, fmtSchedule, TASK_STATUS_LABEL, timeLeft } from '@/lib/format';
 import { colors } from '@/lib/theme';
 import type { EventPhase, EventSummary, Reminders } from '@/lib/types';
 
@@ -112,7 +112,7 @@ function EventCard({ e }: { e: EventSummary }) {
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
             <Icon name="calendar" size={14} />
             <T>
-              {fmtDate(e.startsAt)} · {fmtRange(e.startsAt, e.endsAt)}
+              {fmtSchedule(e.sessions)}
             </T>
           </View>
           <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
@@ -158,7 +158,7 @@ function EventCard({ e }: { e: EventSummary }) {
           </View>
         ))}
         <T size={11} color={colors.primary}>
-          {e.photographerNeeded ? (e.progress.photographerPending ? `+ ${e.photographerQuantity} người chụp ảnh chưa xác nhận` : 'Đã xác nhận người chụp ảnh') : 'Không có task chụp ảnh'}
+          {e.photographerNeeded ? (e.progress.photographerPending ? `+ chụp ảnh ${e.photoSlots.length} ngày chưa xác nhận` : 'Đã xác nhận người chụp ảnh') : 'Không có task chụp ảnh'}
         </T>
         <Button title="Xem sự kiện" icon="arrow-right" onPress={() => router.push(`/events/${e.id}`)} />
       </View>

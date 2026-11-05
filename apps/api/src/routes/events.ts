@@ -5,7 +5,7 @@ import type { Prisma, TaskType } from '../generated/prisma/client';
 import { prisma } from '../prisma';
 import { currentUser, requireAuth, requireRole, type AuthUser } from '../middleware/auth';
 import { badRequest, forbidden, parseId } from '../lib/http';
-import { addDays } from '../lib/time';
+import { addDays, vnDateString } from '../lib/time';
 import { config } from '../config';
 import { DELIVERABLE_TYPES, DIMENSIONS_REQUIRED, TASK_TYPE_LABEL } from '../lib/labels';
 import {
@@ -140,40 +140,111 @@ const deliverableSchema = z
     }
   });
 
+/** Một khoảng giờ trong MỘT ngày: dùng cho ngày diễn ra và slot chụp ảnh */
+const timeRange = z.object({
+  startsAt: z.coerce.date({ errorMap: () => ({ message: 'Giờ bắt đầu không hợp lệ' }) }),
+  endsAt: z.coerce.date({ errorMap: () => ({ message: 'Giờ kết thúc không hợp lệ' }) }),
+});
+const photoSlotSchema = timeRange.extend({
+  quantity: z.number().int().min(1, 'Số người chụp tối thiểu là 1').max(20, 'Tối đa 20 người chụp/ngày'),
+});
+
 const eventSchema = z
   .object({
     name: z.string().trim().min(3, 'Tên sự kiện tối thiểu 3 ký tự').max(150),
     location: z.string().trim().min(1, 'Vui lòng nhập địa điểm').max(150),
-    startsAt: z.coerce.date({ errorMap: () => ({ message: 'Thời gian bắt đầu không hợp lệ' }) }),
-    endsAt: z.coerce.date({ errorMap: () => ({ message: 'Thời gian kết thúc không hợp lệ' }) }),
+    /**
+     * Các ngày diễn ra (sự kiện kéo dài x ngày, không cần liên tiếp).
+     * Client cũ chỉ gửi startsAt/endsAt -> coi là 1 ngày.
+     */
+    sessions: z.array(timeRange).max(14, 'Tối đa 14 ngày diễn ra').optional(),
+    startsAt: z.coerce.date().optional(),
+    endsAt: z.coerce.date().optional(),
     notes: z.string().trim().max(5000).optional().nullable(),
     onlineContent: z.string().trim().max(5000).optional().nullable(),
     offlineContent: z.string().trim().max(5000).optional().nullable(),
+    /** Lịch chụp ảnh theo ngày. Client cũ gửi photographerNeeded + photographerQuantity */
+    photoSlots: z.array(photoSlotSchema).max(14).optional(),
     photographerNeeded: z.boolean().default(true),
     photographerQuantity: z.number().int().min(0).max(20).default(1),
     memberIds: z.array(z.number().int().positive()).default([]),
-    deliverables: z.array(deliverableSchema).max(30).default([]),
+    deliverables: z.array(deliverableSchema).max(30, 'Tối đa 30 ấn phẩm').default([]),
     /** true = "Gửi & phân công", false = "Lưu nháp" */
     publish: z.boolean().default(false),
   })
-  .superRefine((d, ctx) => {
-    if (d.endsAt < d.startsAt) {
-      ctx.addIssue({ code: 'custom', path: ['endsAt'], message: 'Giờ kết thúc phải sau giờ bắt đầu' });
+  .transform((d, ctx) => {
+    // ---- Ngày diễn ra ----
+    const sessions = (d.sessions ?? (d.startsAt && d.endsAt ? [{ startsAt: d.startsAt, endsAt: d.endsAt }] : []))
+      .slice()
+      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+    if (sessions.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['sessions'], message: 'Cần ít nhất 1 ngày diễn ra' });
+      return z.NEVER;
     }
-    if (d.photographerNeeded && d.photographerQuantity < 1) {
-      ctx.addIssue({ code: 'custom', path: ['photographerQuantity'], message: 'Số người chụp ảnh tối thiểu là 1' });
-    }
+    const seen = new Set<string>();
+    sessions.forEach((s, i) => {
+      const day = vnDateString(s.startsAt);
+      if (s.endsAt <= s.startsAt) {
+        ctx.addIssue({ code: 'custom', path: ['sessions', i, 'endsAt'], message: `Ngày ${dayLabel(day)}: giờ kết thúc phải sau giờ bắt đầu` });
+      } else if (vnDateString(new Date(s.endsAt.getTime() - 1)) !== day) {
+        ctx.addIssue({ code: 'custom', path: ['sessions', i, 'endsAt'], message: `Ngày ${dayLabel(day)}: giờ bắt đầu và kết thúc phải trong cùng một ngày` });
+      }
+      if (seen.has(day)) ctx.addIssue({ code: 'custom', path: ['sessions', i], message: `Ngày ${dayLabel(day)} bị chọn trùng` });
+      seen.add(day);
+    });
+
+    // ---- Lịch chụp ảnh ----
+    const photoSlots = (
+      d.photoSlots ??
+      (d.photographerNeeded ? sessions.map((s) => ({ ...s, quantity: Math.max(1, d.photographerQuantity) })) : [])
+    )
+      .slice()
+      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+    const photoDays = new Set<string>();
+    photoSlots.forEach((p, i) => {
+      const day = vnDateString(p.startsAt);
+      if (!seen.has(day)) {
+        ctx.addIssue({ code: 'custom', path: ['photoSlots', i], message: `Chụp ảnh ${dayLabel(day)}: không phải ngày diễn ra sự kiện` });
+      }
+      if (p.endsAt <= p.startsAt) {
+        ctx.addIssue({ code: 'custom', path: ['photoSlots', i, 'endsAt'], message: `Chụp ảnh ${dayLabel(day)}: giờ kết thúc phải sau giờ bắt đầu` });
+      }
+      if (photoDays.has(day)) ctx.addIssue({ code: 'custom', path: ['photoSlots', i], message: `Chụp ảnh ${dayLabel(day)} bị chọn trùng` });
+      photoDays.add(day);
+    });
+
     if (d.publish) {
       if (d.memberIds.length === 0) {
         ctx.addIssue({ code: 'custom', path: ['memberIds'], message: 'Chọn ít nhất 1 thành viên BTT phụ trách' });
       }
-      if (d.deliverables.length === 0 && !d.photographerNeeded) {
+      if (d.deliverables.length === 0 && photoSlots.length === 0) {
         ctx.addIssue({ code: 'custom', path: ['deliverables'], message: 'Chọn ít nhất 1 ấn phẩm hoặc bật chụp ảnh' });
       }
     }
+
+    const { sessions: _s, photoSlots: _p, ...rest } = d;
+    return {
+      ...rest,
+      sessions,
+      photoSlots,
+      // Cả sự kiện = từ đầu ngày đầu tiên tới cuối ngày cuối cùng
+      startsAt: sessions[0].startsAt,
+      endsAt: sessions[sessions.length - 1].endsAt,
+      photographerNeeded: photoSlots.length > 0,
+      photographerQuantity: photoSlots.reduce((m, p) => Math.max(m, p.quantity), 0), // đông nhất trong 1 ngày
+    };
   });
 
-type EventInput = z.infer<typeof eventSchema>;
+/** '2026-11-08' -> '08/11' */
+const dayLabel = (ymd: string) => `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`;
+
+type EventInput = z.output<typeof eventSchema>;
+
+/** Mô tả ngắn lịch chụp cho task PHOTOGRAPHER: "2 người chụp ảnh" hoặc "3 ngày · 5 lượt người chụp" */
+function photoSummary(slots: EventInput['photoSlots']) {
+  if (slots.length === 1) return `${slots[0].quantity} người chụp ảnh`;
+  return `${slots.length} ngày · ${slots.reduce((s, p) => s + p.quantity, 0)} lượt người chụp`;
+}
 
 function assertFuture(d: EventInput, user: AuthUser) {
   if (user.role !== 'ADMIN' && d.startsAt <= new Date()) {
@@ -211,13 +282,13 @@ async function syncTasks(tx: Prisma.TransactionClient, eventId: number, d: Event
     else await tx.task.create({ data: { ...data, eventId } });
   }
 
-  // 2) Phân công chụp ảnh — hạn = giờ bắt đầu sự kiện
+  // 2) Phân công chụp ảnh — MỘT task cho cả lịch chụp, hạn = giờ chụp đầu tiên
   const photo = existing.find((t) => t.type === 'PHOTOGRAPHER');
   if (d.photographerNeeded) {
     const data = {
       title: TASK_TYPE_LABEL.PHOTOGRAPHER,
-      dimensions: `${d.photographerQuantity} người chụp ảnh`,
-      deadline: d.startsAt,
+      dimensions: photoSummary(d.photoSlots),
+      deadline: d.photoSlots[0].startsAt,
     };
     if (photo) await tx.task.update({ where: { id: photo.id }, data });
     else await tx.task.create({ data: { ...data, eventId, type: 'PHOTOGRAPHER' } });
@@ -233,6 +304,18 @@ async function syncTasks(tx: Prisma.TransactionClient, eventId: number, d: Event
   };
   if (recap) await tx.task.update({ where: { id: recap.id }, data: recapData });
   else await tx.task.create({ data: { ...recapData, eventId, type: 'RECAP' } });
+}
+
+/** Ghi lại các ngày diễn ra + lịch chụp (thay toàn bộ, vì form luôn gửi đủ danh sách) */
+async function syncSchedule(tx: Prisma.TransactionClient, eventId: number, d: EventInput) {
+  await tx.eventSession.deleteMany({ where: { eventId } });
+  await tx.photoSlot.deleteMany({ where: { eventId } });
+  await tx.eventSession.createMany({ data: d.sessions.map((s) => ({ eventId, startsAt: s.startsAt, endsAt: s.endsAt })) });
+  if (d.photoSlots.length) {
+    await tx.photoSlot.createMany({
+      data: d.photoSlots.map((p) => ({ eventId, startsAt: p.startsAt, endsAt: p.endsAt, quantity: p.quantity })),
+    });
+  }
 }
 
 /** Gửi thông báo sau khi lưu: BTT mới được phân công nhận EVENT_ASSIGNED, BTT cũ nhận TASK_UPDATED */
@@ -290,6 +373,7 @@ eventsRouter.post('/', requireRole('BCH'), async (req, res) => {
         members: { create: d.memberIds.map((userId) => ({ userId })) },
       },
     });
+    await syncSchedule(tx, created.id, d);
     await syncTasks(tx, created.id, d);
     await tx.activityLog.create({
       data: {
@@ -348,6 +432,7 @@ eventsRouter.put('/:id', requireRole('BCH', 'ADMIN'), async (req, res) => {
       data: d.memberIds.map((userId) => ({ eventId: id, userId })),
       skipDuplicates: true,
     });
+    await syncSchedule(tx, id, d);
     await syncTasks(tx, id, d);
     await tx.activityLog.create({
       data: {

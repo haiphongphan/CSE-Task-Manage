@@ -338,12 +338,18 @@ export function TimePicker({ value, onChange, placeholder = 'Chọn giờ' }: { 
   const [h, m] = value ? value.split(':') : ['', ''];
   const hourRef = useRef<HTMLDivElement>(null);
 
-  // Mở ra thì cuộn tới giờ đang chọn
+  // Mở ra thì cuộn CỘT GIỜ tới giờ đang chọn. Chỉ chỉnh scrollTop của cột:
+  // KHÔNG dùng scrollIntoView vì nó cuộn cả trang (màn hình bị nhảy).
+  // Chỉ chạy lúc mở (không theo `h`), để bấm chọn giờ không làm cột tự cuộn lại.
   useEffect(() => {
-    if (open && h) hourRef.current?.querySelector(`[data-h="${h}"]`)?.scrollIntoView({ block: 'center' });
-  }, [open, h]);
+    if (!open) return;
+    const list = hourRef.current;
+    const item = list?.querySelector<HTMLElement>(`[data-h="${h}"]`);
+    if (list && item) list.scrollTop = item.offsetTop - list.clientHeight / 2 + item.offsetHeight / 2;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-  const col = 'flex max-h-48 flex-col gap-1 overflow-y-auto pr-1';
+  const col = 'relative flex max-h-48 flex-col gap-1 overflow-y-auto pr-1'; // relative: để offsetTop tính theo cột
   const cell = (on: boolean) =>
     cx('rounded-lg px-3 py-1.5 text-[13px] transition', on ? 'bg-primary font-medium text-white' : 'text-navy hover:bg-ice');
 
